@@ -128,31 +128,34 @@ const HomePage = ({ onPlay, onBrowseFiles }) => {
      return () => window.removeEventListener('user-content-updated', handleUpdate);
   }, []);
 
+  // Build library lookup map once (for O(1) access)
+  const libraryByPath = React.useMemo(() => {
+      const map = new Map();
+      library.forEach(lib => {
+          // Store by both encoded and decoded path for flexibility
+          map.set(lib.path, lib);
+          try {
+              map.set(decodeURIComponent(lib.path), lib);
+          } catch {}
+      });
+      return map;
+  }, [library]);
+
   // Helper to hydrate user list items with full metadata from library
   const hydrateItems = (items) => {
-      if (!items) return [];
+      if (!items || !items.length) return [];
       
-      const hydrated = items.map(item => {
-          let libraryItem = library.find(lib => lib.path === item.path);
+      return items.map(item => {
+          // Fast O(1) lookup
+          let libraryItem = libraryByPath.get(item.path);
           
-          // If no exact match, try finding the Closest Parent Folder
+          // If no exact match, try to find parent folder (simpler approach)
           if (!libraryItem && item.path) {
-               // Find all library items that could be a parent of this file
-               const candidates = library.filter(lib => {
-                   // Ignore files, only look for folders/movies/shows
-                   if (lib.type !== 'directory' && lib.mediaType !== 'movie' && lib.mediaType !== 'tv') return false;
-                   
-                   // CRITICAL: Decode library path for comparison (library uses %20, Continue Watching uses spaces)
-                   const decodedLibPath = decodeURIComponent(lib.path);
-                   const dirPath = decodedLibPath.endsWith('/') ? decodedLibPath : decodedLibPath + '/';
-                   return item.path.startsWith(dirPath);
-               });
-               
-               // Sort by path length descending (longest path = closest parent)
-               if (candidates.length > 0) {
-                   candidates.sort((a, b) => b.path.length - a.path.length);
-                   libraryItem = candidates[0];
-               }
+              // Extract show folder from path (e.g., /TV Series/ShowName/Season 1/file.mkv -> /TV Series/ShowName)
+              const seasonMatch = item.path.match(/^(.*?\/[^/]+)\/season\s*\d+\//i);
+              if (seasonMatch) {
+                  libraryItem = libraryByPath.get(seasonMatch[1]) || libraryByPath.get(seasonMatch[1] + '/');
+              }
           }
 
           if (libraryItem) {

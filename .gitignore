@@ -126,3 +126,6 @@ release/
 !README.md
 
 dist-electron-build/
+
+# Temporary HLS streaming files
+temp_hls/

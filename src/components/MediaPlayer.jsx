@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import Hls from 'hls.js'; // Import HLS
 import { api } from '../services/api';
 import './MediaPlayer.css';
 
@@ -12,23 +13,141 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
   const [played, setPlayed] = useState(0);
   const [seeking, setSeeking] = useState(false);
   const playerRef = useRef(null);
+  const containerRef = useRef(null); // For fullscreen
+  const hlsRef = useRef(null); // Ref for HLS instance
   
-  // Memoize streamUrl to prevent infinite re-renders
+  // Transcoding State
+  const [seekOffset, setSeekOffset] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const needsTranscoding = useMemo(() => file ? api.needsTranscoding(file.path) : false, [file]);
+
+  // Stream URL
   const streamUrl = useMemo(() => {
     if (!file) return '';
-    return api.getStreamUrl(file.path);
-  }, [file?.path]);
-  
-  // Save volume to localStorage when it changes
+    // If transcoding, we append seekOffset as startTime to trigger new HLS session
+    return api.getStreamUrl(file.path, needsTranscoding ? seekOffset : 0);
+  }, [file?.path, seekOffset, needsTranscoding]);
+
+  // Save volume
   useEffect(() => {
     localStorage.setItem('mediaPlayerVolume', volume.toString());
   }, [volume]);
 
-  // Reset playback when file changes
+  // Reset state when FILE changes (not when streamUrl changes for seeking)
   useEffect(() => {
     setPlayed(0);
+    setSeekOffset(0);
+    setDuration(0);
     setPlaying(autostart);
-  }, [file, autostart]);
+
+    // Fetch metadata for duration
+    if (file && needsTranscoding) {
+        api.getMediaMetadata(file.path).then(meta => {
+            if (meta && meta.format && meta.format.duration) {
+                setDuration(parseFloat(meta.format.duration));
+            }
+        });
+    }
+  }, [file]); // ONLY reset on file change, NOT streamUrl
+
+  // Initialize HLS when streamUrl changes (including for seeking)
+  useEffect(() => {
+    const video = playerRef.current;
+    if (!video || !streamUrl) return;
+
+    // Cleanup previous HLS
+    if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+    }
+
+    if (needsTranscoding) {
+        if (Hls.isSupported()) {
+            console.log('Initializing HLS for:', streamUrl);
+            setIsBuffering(true); // Show loading indicator
+            const hls = new Hls({
+                debug: false,
+                enableWorker: true,
+                lowLatencyMode: true,
+            });
+            hlsRef.current = hls;
+
+            hls.loadSource(streamUrl);
+            hls.attachMedia(video);
+
+            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                setIsBuffering(false); // Hide loading
+                video.play().catch(e => console.error("Autoplay failed", e));
+            });
+            
+            hls.on(Hls.Events.ERROR, (event, data) => {
+                if (data.fatal) {
+                   switch (data.type) {
+                       case Hls.ErrorTypes.NETWORK_ERROR:
+                           hls.startLoad();
+                           break;
+                       case Hls.ErrorTypes.MEDIA_ERROR:
+                           hls.recoverMediaError();
+                           break;
+                       default:
+                           hls.destroy();
+                           break;
+                   }
+                }
+            });
+        }
+    } else {
+        video.src = streamUrl;
+        if (autostart) video.play();
+    }
+
+    return () => {
+        if (hlsRef.current) {
+            hlsRef.current.destroy();
+            hlsRef.current = null;
+        }
+    };
+  }, [streamUrl, needsTranscoding]); // Trigger on streamUrl change (seek or new file)
+
+
+  // Handlers
+  const handleSeekMouseUp = (e) => {
+    setSeeking(false);
+    const video = playerRef.current;
+    
+    const effectiveDuration = duration || (video ? video.duration : 0);
+    
+    if (effectiveDuration) {
+      const seekToTime = parseFloat(e.target.value) * effectiveDuration;
+      
+      if (needsTranscoding) {
+          console.log(`Seek to ${seekToTime}s (HLS Mode)`);
+          setSeekOffset(seekToTime); // Triggers streamUrl update -> new HLS session
+          setPlaying(true);
+      } else {
+          if (video) video.currentTime = seekToTime;
+      }
+    }
+  };
+
+  const onTimeUpdateHandler = (e) => {
+      if (!seeking) {
+         const vidTime = e.target.currentTime;
+         const effectiveTime = vidTime + seekOffset;
+         
+         const currentDuration = duration || e.target.duration;
+         if (!duration && e.target.duration && e.target.duration !== Infinity) {
+             setDuration(e.target.duration);
+         }
+
+         if (currentDuration && currentDuration !== Infinity) {
+            setPlayed(effectiveTime / currentDuration);
+            if (onProgress) onProgress(effectiveTime, currentDuration);
+         }
+      }
+  };
+
 
   // Handle keyboard controls
   useEffect(() => {
@@ -67,13 +186,7 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
     setSeeking(true);
   };
 
-  const handleSeekMouseUp = (e) => {
-    setSeeking(false);
-    const video = playerRef.current;
-    if (video && video.duration) {
-      video.currentTime = parseFloat(e.target.value) * video.duration;
-    }
-  };
+
 
   const handlePlayPause = () => {
     const video = playerRef.current;
@@ -101,28 +214,78 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
       playerRef.current.muted = newMuted;
     }
   };
+  
+  // If we are transcoding, we might need to resume play after source change
+  useEffect(() => {
+      // Auto-play when streamUrl changes if it was initiated by seeking?
+      // Actually autoPlay prop on video tag handles initial. 
+      // But if we seek (change src), we usually want to keep playing.
+      if (needsTranscoding && seekOffset > 0 && playerRef.current) {
+          // Play handled by autoPlay={true} or explicit play?
+          // We set autoPlay={autostart} which might be true/false.
+          // Force play if we just seeked.
+          // playerRef.current.play() might effectively work on loadedmetadata
+      }
+  }, [streamUrl, needsTranscoding, seekOffset]);
+
+  const toggleFullscreen = () => {
+    const container = containerRef.current;
+    if (!container) return;
+    
+    if (!document.fullscreenElement) {
+      container.requestFullscreen().catch(err => console.error('Fullscreen error:', err));
+    } else {
+      document.exitFullscreen();
+    }
+  };
 
   return (
-    <div className="w-full h-full bg-black relative netflix-player">
+    <div ref={containerRef} className="w-full h-full bg-black relative netflix-player">
+      {/* Loading Overlay - positioned above controls */}
+      {isBuffering && (
+        <div className="absolute inset-x-0 top-0 bottom-20 z-10 flex items-center justify-center bg-black/50">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-12 h-12 border-4 border-red-600 border-t-transparent rounded-full animate-spin"></div>
+            <span className="text-white text-sm">Preparing stream...</span>
+          </div>
+        </div>
+      )}
+      
       <video 
         ref={playerRef}
         src={streamUrl}
-        autoPlay={autostart}
+        autoPlay={autostart || (needsTranscoding && seekOffset > 0)}
         controls={false}
         onClick={handlePlayPause}
         style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' }}
         onLoadedMetadata={(e) => {
-          console.log('✅ Video metadata loaded, duration:', e.target.duration);
+          console.log(`✅ Video metadata loaded. Duration: ${e.target.duration}, SeekOffset: ${seekOffset}`);
           // Apply stored volume
           e.target.volume = volume;
           e.target.muted = muted;
           
-          // resume playback if requested
-          if (file.startTime && file.startTime > 0) {
-              e.target.currentTime = file.startTime;
-          } else if (file.currentTime && file.currentTime > 0) {
-              // Handle case where we pass the raw history item
-              e.target.currentTime = file.currentTime;
+          // resume playback if requested (initial load)
+          if (seekOffset === 0) {
+              if (file.startTime && file.startTime > 0) {
+                   if (needsTranscoding) {
+                       setSeekOffset(file.startTime); // Trigger reload with offset
+                       return;
+                   } else {
+                       e.target.currentTime = file.startTime;
+                   }
+              } else if (file.currentTime && file.currentTime > 0) {
+                  if (needsTranscoding) {
+                      setSeekOffset(file.currentTime);
+                      return;
+                  } else {
+                      e.target.currentTime = file.currentTime;
+                  }
+              }
+          }
+          
+          // If not transcoding, set duration from video tag if we don't have it
+          if (!needsTranscoding) {
+              setDuration(e.target.duration);
           }
         }}
         onCanPlay={() => console.log('✅ Video can play')}
@@ -134,18 +297,22 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
           console.log('⏸️ Video paused');
           setPlaying(false);
         }}
-        onTimeUpdate={(e) => {
-          if (!seeking && e.target.duration) {
-            setPlayed(e.target.currentTime / e.target.duration);
-            if (onProgress) onProgress(e.target.currentTime, e.target.duration); // Expose progress
-          }
-        }}
+        onTimeUpdate={onTimeUpdateHandler}
         onEnded={() => {
           console.log('🏁 Video ended');
           setPlaying(false);
+          // Only trigger onEnded if we really reached the end (total duration)
+          // For transcoded, the stream ends, which usually means end of file.
           if (onEnded) onEnded();
         }}
-        onError={(e) => console.error('❌ Video error:', e)}
+        onError={(e) => {
+            const err = e.target.error;
+            console.error('❌ Video error:', err);
+            if (err) {
+                console.error('Error Code:', err.code);
+                console.error('Error Message:', err.message);
+            }
+        }}
       />
       
       
@@ -213,15 +380,37 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
             />
           </div>
 
-          {/* File Name */}
-          <div className="flex-1 text-white text-sm font-medium truncate">
-            {file.name}
-            <span className="text-xs text-gray-400 ml-2 block sm:inline sm:ml-2 opacity-50">
-               {streamUrl}
-            </span>
+          {/* Timestamp Display */}
+          <div className="text-white text-xs font-medium">
+             {(() => {
+                 const current = (played * (duration || 0));
+                 const total = duration || 0;
+                 const format = (s) => {
+                     if (isNaN(s)) return '0:00';
+                     const m = Math.floor(s / 60);
+                     const sec = Math.floor(s % 60);
+                     return `${m}:${sec.toString().padStart(2, '0')}`;
+                 }
+                 return `${format(current)} / ${format(total)}`;
+             })()}
           </div>
 
-          {/* Fullscreen could be added here */}
+          {/* File Name */}
+          <div className="flex-1 text-white text-sm font-medium truncate ml-4 opacity-80">
+            {file.name}
+            {needsTranscoding && <span className="ml-2 px-1.5 py-0.5 rounded bg-yellow-600/50 text-[10px] text-white tracking-wider">TRANSCODED</span>}
+          </div>
+
+          {/* Fullscreen Button */}
+          <button
+            onClick={toggleFullscreen}
+            className="text-white hover:text-gray-300 transition-colors ml-4"
+            aria-label="Toggle fullscreen"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" />
+            </svg>
+          </button>
         </div>
       </div>
     </div>

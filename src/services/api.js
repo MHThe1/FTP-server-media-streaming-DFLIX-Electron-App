@@ -2,7 +2,28 @@ const HTTP_SERVER_URL = import.meta.env.VITE_HTTP_SERVER_URL || 'http://cdn.dfli
 const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY || '';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
-// Helper to parse directory listings (Nginx Autoindex specific)
+
+let TRANSCODE_PORT = null;
+const initTranscodePort = async (retries = 3) => {
+    if (window.require) {
+        try {
+            const { ipcRenderer } = window.require('electron');
+            // Small delay to ensure main process is ready upon reload
+            await new Promise(r => setTimeout(r, 500));
+            
+            TRANSCODE_PORT = await ipcRenderer.invoke('get-transcode-port');
+            console.log('Transcoding server available on port:', TRANSCODE_PORT);
+        } catch (e) {
+            console.warn(`Failed to get transcode port (retries left: ${retries}):`, e);
+            if (retries > 0) {
+                setTimeout(() => initTranscodePort(retries - 1), 1000);
+            }
+        }
+    }
+};
+initTranscodePort();
+
+// Helper to parsing directory listings (Nginx Autoindex specific)
 const parseDirectoryListing = (html, currentPath) => {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
@@ -30,14 +51,15 @@ const parseDirectoryListing = (html, currentPath) => {
       // Detect directory
       const isDirectory = href.endsWith('/');
       
-      // Clean names
-      let name = text.replace(/\/$/, ''); // Remove trailing slash for display
+      // Extract name from href (text may be truncated by Nginx for long names!)
+      // Decode the href to get the actual filename
       let cleanHref = href;
-      
+      let name;
       try {
-          name = decodeURIComponent(name);
-          // cleanHref = decodeURIComponent(href); // DO NOT decode here, breaks # and ? in filenames
-      } catch (e) { }
+          name = decodeURIComponent(href.replace(/\/$/, '')); // Decode and remove trailing slash
+      } catch (e) {
+          name = text.replace(/\/$/, ''); // Fallback to text if decode fails
+      }
 
       // Skip non-media files if it's a file
       if (!isDirectory) {
@@ -92,7 +114,21 @@ const parseDirectoryListing = (html, currentPath) => {
 
   console.log(`Parsed ${files.length} items from ${currentPath}`);
 
-  return files;
+  console.log(`Parsed ${files.length} items from ${currentPath}`);
+
+  // Strong Deduplication by Name
+  // Use a Map to keep the LAST occurrence (or first? unique).
+  // We prefer the one that looks "cleaner"? Actually just unique names.
+  const uniqueFiles = new Map();
+  files.forEach(file => {
+      // If we already have this name, maybe check which path is better?
+      // For now, just First Wins or Last Wins.
+      if (!uniqueFiles.has(file.name)) {
+          uniqueFiles.set(file.name, file);
+      }
+  });
+
+  return Array.from(uniqueFiles.values());
 };
 
 export const api = {
@@ -128,14 +164,67 @@ export const api = {
     }
   },
 
-  getStreamUrl(filePath) {
+  needsTranscoding(filePath) {
+      const ext = filePath.split('.').pop().toLowerCase();
+      const compatible = ['mp4', 'webm', 'ogv', 'mp3', 'wav', 'ogg', 'm4a', 'aac']; 
+      // Force transcode/remux for these containers/formats
+      return !compatible.includes(ext) || ['mkv', 'avi', 'wmv', 'flv', 'mov'].includes(ext);
+  },
+
+  async getMediaMetadata(filePath) {
+      if (!TRANSCODE_PORT) return null;
+      try {
+          const url = new URL(HTTP_SERVER_URL);
+          const basePath = url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
+          const cleanPath = filePath.startsWith('/') ? filePath : '/' + filePath;
+          url.pathname = basePath + cleanPath;
+          const originalUrl = url.href;
+
+          const response = await fetch(`http://localhost:${TRANSCODE_PORT}/metadata?file=${encodeURIComponent(originalUrl)}`);
+          if (!response.ok) return null;
+          return await response.json();
+      } catch (e) {
+          console.error('Failed to get media metadata:', e);
+          return null;
+      }
+  },
+
+  getStreamUrl(filePath, startTime = 0) {
     try {
       const url = new URL(HTTP_SERVER_URL);
       const basePath = url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
-      const cleanPath = filePath.startsWith('/') ? filePath : '/' + filePath;
+      
+      // Decode first to prevent double-encoding (URL constructor auto-encodes)
+      let cleanPath = filePath.startsWith('/') ? filePath : '/' + filePath;
+      try {
+          cleanPath = decodeURIComponent(cleanPath);
+      } catch (e) { /* Already decoded, ignore */ }
       
       url.pathname = basePath + cleanPath;
-      return url.href;
+      const originalUrl = url.href;
+
+      // Check extensions for transcoding
+      // If we have a transcode port, we can proxy incompatible files
+      if (TRANSCODE_PORT) {
+          const ext = filePath.split('.').pop().toLowerCase();
+          const compatible = ['mp4', 'webm', 'ogv', 'mp3', 'wav', 'ogg', 'm4a', 'aac']; // Browser compatible
+          // Note: wav is usually supported, but some encodings might not be. We'll trust browser for wav for now unless user complained.
+          // User request mentioned wav issues. Let's include wav in transcoding if needed, but WAV usually works.
+          // Actually user "some wav or mkv files".
+          // Let's force transcode for mkv, avi, wmv, flv, mov (sometimes mov needs it).
+          // And if it's 4k (usually HEVC in mkv), we definitely need to transcode/remux.
+          const needsTranscode = !compatible.includes(ext) || ext === 'mkv' || ext === 'avi' || ext === 'wmv' || ext === 'flv' || ext === 'mov';
+
+          if (needsTranscode) {
+             // Construct local transcoding URL
+             // If startTime is provided, we pass it to the transcoder
+             // Note: The transcoder expects 'file' param to be the full remote URL
+             const transcodeUrl = `http://localhost:${TRANSCODE_PORT}/stream?file=${encodeURIComponent(originalUrl)}&startTime=${startTime}`;
+             return transcodeUrl;
+          }
+      }
+
+      return originalUrl;
     } catch (e) {
       console.error('Error forming stream URL:', e);
       return HTTP_SERVER_URL + filePath;

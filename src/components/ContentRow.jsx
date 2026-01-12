@@ -46,7 +46,7 @@ const ContentRow = ({ title, items, onCardClick, onRemove }) => {
         >
             {items.map((item, index) => (
                 <MediaCard 
-                    key={item.path || index} 
+                    key={`${item.path}-${index}`} 
                     item={item} 
                     onClick={onCardClick}
                     onRemove={onRemove}

@@ -49,7 +49,7 @@ const MediaModal = ({ item, onClose, onPlay }) => {
       return n.includes('season') || n.includes('specials') || /^s\d+/.test(n);
   };
 
-  // 1. Initial Load: Check for Seasons or Root Episodes
+  // 1. Initial Load: Recursively explore directories to find all seasons/episodes
   const handleBrowseEpisodes = async () => {
       setView('episodes');
       if (episodes.length > 0 && !seasons.length) return; // Already loaded simple list
@@ -57,36 +57,81 @@ const MediaModal = ({ item, onClose, onPlay }) => {
 
       try {
           setLoadingEpisodes(true);
-          const files = await api.listFiles(item.path);
           
-          // Check for Season folders
-          const seasonFolders = files.filter(f => f.type === 'directory' && isSeasonFolder(f.name));
+          // Smart Path Handling:
+          // If item is a file, browse its parent directory
+          let targetPath = item.path;
+          if (item.type === 'file' || targetPath.match(/\.(mkv|mp4|avi|mov|ts)$/i)) {
+               if (targetPath.endsWith('/')) targetPath = targetPath.slice(0, -1);
+               const lastSlash = targetPath.lastIndexOf('/');
+               if (lastSlash !== -1) {
+                   targetPath = targetPath.substring(0, lastSlash + 1);
+               }
+          }
           
-          if (seasonFolders.length > 0) {
-              // Found seasons!
-              // Sort seasons: Specials (Season 0) first, then Season 1, 2...
-              seasonFolders.sort((a, b) => {
+          console.log(`Browsing episodes from: ${targetPath} (derived from ${item.path})`);
+          
+          // Recursively explore to find all seasons and episodes
+          const { foundSeasons, rootVideos } = await exploreDirectory(targetPath, 0, 3);
+          
+          if (foundSeasons.length > 0) {
+              // Sort seasons: Specials first, then Season 1, 2...
+              foundSeasons.sort((a, b) => {
                   const getNum = (s) => parseInt(s.name.match(/\d+/) || 0);
-                  const aNum = getNum(a);
-                  const bNum = getNum(b);
-                  // Handle specials/season 0
                   if (a.name.toLowerCase().includes('specials')) return -1;
                   if (b.name.toLowerCase().includes('specials')) return 1;
-                  return aNum - bNum;
+                  return getNum(a) - getNum(b);
               });
               
-              setSeasons(seasonFolders);
-              setSelectedSeason(seasonFolders[0]); // This will trigger the useEffect below to load eps
-          } else {
+              setSeasons(foundSeasons);
+              setSelectedSeason(foundSeasons[0]);
+          } else if (rootVideos.length > 0) {
               // No seasons, just flat episodes
               setSeasons([]);
               setSelectedSeason(null);
-              processEpisodes(files);
+              setEpisodes(rootVideos);
+              setLoadingEpisodes(false);
+          } else {
+              setLoadingEpisodes(false);
           }
       } catch (err) {
           console.error("Failed to load content", err);
           setLoadingEpisodes(false);
       }
+  };
+
+  // Recursive helper to explore directories
+  const exploreDirectory = async (path, depth, maxDepth) => {
+      const foundSeasons = [];
+      const rootVideos = [];
+      
+      if (depth > maxDepth) return { foundSeasons, rootVideos };
+      
+      try {
+          const files = await api.listFiles(path);
+          
+          for (const f of files) {
+              if (f.type === 'directory') {
+                  if (isSeasonFolder(f.name)) {
+                      foundSeasons.push(f);
+                  } else {
+                      // Explore subdirectory for nested seasons
+                      const nested = await exploreDirectory(f.path, depth + 1, maxDepth);
+                      foundSeasons.push(...nested.foundSeasons);
+                      rootVideos.push(...nested.rootVideos);
+                  }
+              } else if (f.type === 'file') {
+                  const ext = f.name.split('.').pop().toLowerCase();
+                  if (['mp4', 'webm', 'mkv', 'avi', 'mov'].includes(ext)) {
+                      rootVideos.push(f);
+                  }
+              }
+          }
+      } catch (e) {
+          console.warn(`Failed to explore ${path}:`, e);
+      }
+      
+      return { foundSeasons, rootVideos };
   };
 
   // 2. Load Episodes for Selected Season

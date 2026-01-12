@@ -25,20 +25,26 @@ async function createWindow() {
     title: 'BetterFlix',
     width: 1280,
     height: 800,
+    backgroundColor: '#141414', // Show dark background immediately
+    show: false, // Don't show until ready
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       nodeIntegration: true,
-      contextIsolation: false, // For easier IPC in this simple app
-      webSecurity: false, // CRITICAL: This allows CORS bypass
+      contextIsolation: false,
+      webSecurity: false,
     },
   });
 
+  // Show window as soon as it's ready, even if content isn't fully loaded
+  win.once('ready-to-show', () => {
+    win.show();
+  });
+
   if (process.env.VITE_DEV_SERVER_URL) {
-    // electron-vite-plugin injects this env var
-    await win.loadURL(process.env.VITE_DEV_SERVER_URL);
+    win.loadURL(process.env.VITE_DEV_SERVER_URL);
     win.webContents.openDevTools();
   } else {
-    await win.loadFile(join(__dirname, '../dist/index.html'));
+    win.loadFile(join(__dirname, '../dist/index.html'));
   }
 
   // Make all links open with the browser, not with the application
@@ -74,7 +80,27 @@ async function createWindow() {
   })
 }
 
-app.whenReady().then(createWindow);
+// Transcoding port - MUST be declared before app.whenReady
+let globalTranscodePort = null;
+
+// IPC handler - MUST be registered before window loads
+ipcMain.handle('get-transcode-port', () => {
+  console.log('IPC: get-transcode-port called. Returning:', globalTranscodePort);
+  return globalTranscodePort;
+});
+
+app.whenReady().then(async () => {
+  try {
+    const { startTranscodeServer } = await import('./transcodeServer.js');
+    const port = await startTranscodeServer();
+    globalTranscodePort = port.toString();
+    process.env.TRANSCODE_PORT = port.toString();
+    console.log('[Main] Transcoding server started on port:', globalTranscodePort);
+  } catch (err) {
+    console.error('Failed to start transcoder:', err);
+  }
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   win = null;
@@ -83,7 +109,6 @@ app.on('window-all-closed', () => {
 
 app.on('second-instance', () => {
   if (win) {
-    // Focus on the main window if the user tried to open another
     if (win.isMinimized()) win.restore();
     win.focus();
   }

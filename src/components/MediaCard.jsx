@@ -11,7 +11,14 @@ const MediaCard = ({ item, onClick, onRemove }) => {
   const hoverTimer = useRef(null);
   const videoRef = useRef(null);
   
-  const hasPoster = item.posterPath && !imgError;
+  // Fix posterPath if it's a relative TMDB path
+  const posterUrl = item.posterPath 
+      ? (item.posterPath.startsWith('/') 
+          ? `https://image.tmdb.org/t/p/w500${item.posterPath}` 
+          : item.posterPath)
+      : null;
+  
+  const hasPoster = posterUrl && !imgError;
 
   useEffect(() => {
       return () => {
@@ -115,7 +122,7 @@ const MediaCard = ({ item, onClick, onRemove }) => {
         {/* Poster Layer */}
         {hasPoster ? (
           <img 
-            src={item.posterPath} 
+            src={posterUrl} 
             alt={item.title || item.name}
             className={`w-full h-full object-cover transition-opacity duration-500 absolute inset-0 ${isPlaying ? 'opacity-0' : 'opacity-100'}`}
             onError={() => setImgError(true)}

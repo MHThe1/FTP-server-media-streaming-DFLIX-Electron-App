@@ -8,6 +8,26 @@
   "build": {
     "appId": "com.betterflix.desktop",
     "productName": "BetterFlix",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**",
+      "node_modules/ffprobe-static/**"
+    ],
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "!node_modules/**/*",
+      "node_modules/express/**/*",
+      "node_modules/cors/**/*",
+      "node_modules/fluent-ffmpeg/**/*",
+      "node_modules/get-port/**/*",
+      "node_modules/range-parser/**/*",
+      "node_modules/ffmpeg-static/ffmpeg.exe",
+      "node_modules/ffmpeg-static/package.json",
+      "node_modules/ffprobe-static/bin/win32/**/*",
+      "node_modules/ffprobe-static/package.json",
+      "node_modules/ffprobe-static/index.js"
+    ],
     "win": {
       "target": [
         "nsis"
@@ -58,6 +78,14 @@
     "vite-plugin-electron-renderer": "^0.14.6"
   },
   "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.2.1",
+    "ffmpeg-static": "^5.3.0",
+    "ffprobe-static": "^3.1.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "get-port": "^7.1.0",
+    "hls.js": "^1.6.15",
+    "range-parser": "^1.2.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-player": "^3.4.0"
