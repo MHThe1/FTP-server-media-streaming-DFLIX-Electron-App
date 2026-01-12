@@ -12,6 +12,15 @@ export default defineConfig({
     electron({
       main: {
         entry: 'electron/main.js',
+        vite: {
+          build: {
+            rollupOptions: {
+              output: {
+                format: 'es',
+              },
+            },
+          },
+        },
       },
       preload: {
         input: 'electron/preload.js',
@@ -19,17 +28,15 @@ export default defineConfig({
     }),
   ],
   server: {
-    host: '0.0.0.0', // Allow access from all network interfaces
+    host: '0.0.0.0',
     port: 3000,
-    // No proxy needed - frontend makes direct API calls
   },
   build: {
     outDir: 'dist',
-    // Use relative paths for extension compatibility
     base: './',
     rollupOptions: {
-      input: {
-        main: join(__dirname, 'index.html'),
+      output: {
+        manualChunks: undefined,
       },
     },
   },

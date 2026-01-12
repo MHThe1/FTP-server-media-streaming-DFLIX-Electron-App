@@ -1,8 +1,11 @@
 import { app, BrowserWindow, shell, ipcMain } from 'electron';
 import { join } from 'path';
+import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
+// Handle __dirname in ES modules - compatible with build tools
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Disable GPU Acceleration for Windows 7
 if (process.platform === 'win32') app.disableHardwareAcceleration();

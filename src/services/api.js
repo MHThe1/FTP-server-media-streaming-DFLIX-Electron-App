@@ -2,91 +2,95 @@ const HTTP_SERVER_URL = import.meta.env.VITE_HTTP_SERVER_URL || 'http://cdn.dfli
 const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY || '';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
-// Helper to parse directory listings
+// Helper to parse directory listings (Nginx Autoindex specific)
 const parseDirectoryListing = (html, currentPath) => {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
   const files = [];
 
+  // Nginx autoindex usually puts links inside <pre>
   const pre = doc.querySelector('pre');
-  if (!pre) {
-    const allLinks = doc.querySelectorAll('a');
-    allLinks.forEach(link => {
+  const links = pre ? pre.querySelectorAll('a') : doc.querySelectorAll('a');
+
+  links.forEach(link => {
       const href = link.getAttribute('href');
-      if (href && href !== '../' && !href.startsWith('http')) {
-        const name = link.textContent.trim();
-        if (name && name !== '../') {
-          const isDirectory = href.endsWith('/');
-          const cleanName = name.replace(/\/$/, '');
-          let filePath = currentPath === '/' ? `/${cleanName}` : `${currentPath}/${cleanName}`;
-          files.push({
-            name: cleanName,
-            type: isDirectory ? 'directory' : 'file',
-            size: 0,
-            modified: null,
-            path: filePath
-          });
-        }
+      const text = link.textContent.trim();
+
+      // CRITICAL: Skip parent directory, sorting headers, or empty links
+      if (!href || href === '../' || href === './' || href.includes('?C=') || text === 'Parent Directory' || text === '../') {
+          return;
       }
-    });
-    return files;
-  }
-
-  const lines = pre.innerHTML.split('\n').filter(line => line.trim());
-  
-  lines.forEach((line) => {
-    if (!line.trim() || line.includes('../') || line.includes('href="../"')) return;
-
-    const linkMatch = line.match(/<a[^>]*href=["']([^"']+)["'][^>]*>([^<]+)<\/a>/);
-    if (!linkMatch) return;
-
-    let href = linkMatch[1];
-    let name = linkMatch[2].trim();
-    
-    if (href === '../' || name === '../') return;
-
-    try {
-      href = decodeURIComponent(href);
-      name = decodeURIComponent(name);
-    } catch (e) {
-      // If decoding fails, use original values
-    }
-
-    const isDirectory = href.endsWith('/') || name.endsWith('/');
-    const cleanName = name.replace(/\/$/, '');
-    const cleanHref = href.replace(/\/$/, '');
-    
-    let size = 0;
-    const afterLink = line.replace(/<a[^>]*>.*?<\/a>/, '').trim();
-    const parts = afterLink.split(/\s+/).filter(p => p && p !== '');
-    
-    // Quick size parsing logic
-    for (const part of parts) {
-        if (!isNaN(parseInt(part)) && part.length > 3) { // Rough heuristic
-            size = parseInt(part);
-            break;
-        }
-    }
-
-    let filePath;
-    if (currentPath === '/') {
-      filePath = `/${cleanHref}`;
-    } else {
-      if (cleanHref.startsWith('/')) {
-        filePath = cleanHref;
-      } else {
-        filePath = `${currentPath}/${cleanHref}`;
+      
+      // Skip specific junk folders that shouldn't be scanned
+      const junkFolders = ['Archive/', 'Softwares/', 'Tutorial/', 'System Volume Information/', 'recycle/'];
+      if (junkFolders.some(junk => href.includes(junk) || text.includes(junk))) {
+          return;
       }
-    }
 
-    files.push({
-      name: cleanName,
-      type: isDirectory ? 'directory' : 'file',
-      size: size,
-      modified: null,
-      path: filePath
-    });
+      // Detect directory
+      const isDirectory = href.endsWith('/');
+      
+      // Clean names
+      let name = text.replace(/\/$/, ''); // Remove trailing slash for display
+      let cleanHref = href;
+      
+      try {
+          name = decodeURIComponent(name);
+          // cleanHref = decodeURIComponent(href); // DO NOT decode here, breaks # and ? in filenames
+      } catch (e) { }
+
+      // Skip non-media files if it's a file
+      if (!isDirectory) {
+          const validExts = ['.mp4', '.mkv', '.avi', '.mov', '.webm'];
+          if (!validExts.some(ext => cleanHref.toLowerCase().endsWith(ext))) {
+              return;
+          }
+      }
+
+      // Debug logging for first few items to reduce noise
+      if (files.length < 5) console.log(`Processing link: [${text}] -> href: [${href}]`);
+
+      // Construct full path
+      let filePath;
+      
+      // Removed the check that skipped absolute URLs. 
+      // We will handle them in the try/catch block below.
+      
+      // Construct full path with canonical resolution
+      try {
+           // Use URL API to resolve relative paths (handles ../, ./, etc.)
+           // We use a dummy base origin because URL requires one, then extract pathname
+           const dummyBase = 'http://dflix.local'; 
+           const basePath = currentPath.endsWith('/') ? currentPath : currentPath + '/';
+           
+           const resolvedUrl = new URL(cleanHref, dummyBase + basePath);
+           filePath = decodeURIComponent(resolvedUrl.pathname);
+           
+           // Ensure it starts with /
+           if (!filePath.startsWith('/')) filePath = '/' + filePath;
+
+           if (files.length < 5) console.log(`  -> Resolved path: ${filePath}`);
+           
+      } catch (e) {
+          console.error(`  -> Path resolution failed for ${cleanHref}:`, e);
+          // Fallback to simple concat if URL fails
+          const base = currentPath.endsWith('/') ? currentPath : currentPath + '/';
+          filePath = base + cleanHref; // Use cleanHref for consistency with original logic
+      }
+      
+      // Prevent going above root
+      if (!filePath.startsWith('/')) filePath = '/' + filePath;
+
+      files.push({
+          name: name,
+          type: isDirectory ? 'directory' : 'file',
+          size: 0, // Nginx size parsing is messy, skipping for now
+          modified: null,
+          path: filePath
+      });
   });
+
+  console.log(`Parsed ${files.length} items from ${currentPath}`);
 
   return files;
 };
@@ -94,18 +98,23 @@ const parseDirectoryListing = (html, currentPath) => {
 export const api = {
   async listFiles(path = '/') {
     try {
-      let url = HTTP_SERVER_URL;
-      if (path !== '/') {
-        url += path;
-        if (!path.endsWith('/')) url += '/';
-      } else {
-        url += '/';
+
+      const url = new URL(HTTP_SERVER_URL);
+      const basePath = url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
+      
+      // Ensure path starts with / logic is handled by path arg usually, but let's be safe
+      const cleanPath = path.startsWith('/') ? path : '/' + path;
+      url.pathname = basePath + cleanPath;
+      
+      // Ensure trailing slash for directories (Nginx/Apache usually expect it for listings)
+      if (!url.pathname.endsWith('/')) {
+        url.pathname += '/';
       }
 
-      console.log(`Fetching directory listing from: ${url}`);
+      console.log(`Fetching directory listing from: ${url.href}`);
       
       // In Electron (main process disabled webSecurity), fetch works directly
-      const response = await fetch(url);
+      const response = await fetch(url.href);
       
       if (!response.ok) {
         throw new Error(`Failed to list files: ${response.statusText}`);
@@ -120,17 +129,27 @@ export const api = {
   },
 
   getStreamUrl(filePath) {
-    return HTTP_SERVER_URL + filePath;
+    try {
+      const url = new URL(HTTP_SERVER_URL);
+      const basePath = url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
+      const cleanPath = filePath.startsWith('/') ? filePath : '/' + filePath;
+      
+      url.pathname = basePath + cleanPath;
+      return url.href;
+    } catch (e) {
+      console.error('Error forming stream URL:', e);
+      return HTTP_SERVER_URL + filePath;
+    }
   },
   
   // For downloads inside the app
   getDirectStreamUrl(filePath) {
-    return HTTP_SERVER_URL + filePath;
+    return this.getStreamUrl(filePath);
   },
 
   async getFileInfo(filePath) {
     try {
-      const url = HTTP_SERVER_URL + filePath;
+      const url = this.getStreamUrl(filePath);
       const response = await fetch(url, { method: 'HEAD' });
 
       if (!response.ok) {

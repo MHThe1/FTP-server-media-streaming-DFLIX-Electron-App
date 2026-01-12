@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import ReactPlayer from 'react-player';
 import { api } from '../services/api';
 import './MediaPlayer.css';
 
-const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress }) => {
+const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = false }) => {
   const [playing, setPlaying] = useState(autostart);
   const [volume, setVolume] = useState(() => {
     const saved = localStorage.getItem('mediaPlayerVolume');
@@ -12,12 +13,6 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
   const [played, setPlayed] = useState(0);
   const [seeking, setSeeking] = useState(false);
   const playerRef = useRef(null);
-  
-  // Memoize streamUrl to prevent infinite re-renders
-  const streamUrl = useMemo(() => {
-    if (!file) return '';
-    return api.getStreamUrl(file.path);
-  }, [file?.path]);
   
   // Save volume to localStorage when it changes
   useEffect(() => {
@@ -30,19 +25,6 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
     setPlaying(autostart);
   }, [file, autostart]);
 
-  // Handle keyboard controls
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.code === 'Space') {
-        e.preventDefault();
-        handlePlayPause();
-      }
-    };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []); // Empty dependency array as handlePlayPause reads from ref
-
   if (!file) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-black">
@@ -52,6 +34,8 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
       </div>
     );
   }
+
+  const streamUrl = api.getStreamUrl(file.path);
   
   const handleProgress = (state) => {
     if (!seeking) {
@@ -69,85 +53,46 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
 
   const handleSeekMouseUp = (e) => {
     setSeeking(false);
-    const video = playerRef.current;
-    if (video && video.duration) {
-      video.currentTime = parseFloat(e.target.value) * video.duration;
-    }
+    playerRef.current?.seekTo(parseFloat(e.target.value));
   };
 
   const handlePlayPause = () => {
-    const video = playerRef.current;
-    if (!video) return;
-    
-    if (video.paused) {
-      video.play();
-    } else {
-      video.pause();
-    }
+    setPlaying(!playing);
   };
 
   const handleVolumeChange = (e) => {
-    const newVolume = parseFloat(e.target.value);
-    setVolume(newVolume);
-    if (playerRef.current) {
-      playerRef.current.volume = newVolume;
-    }
+    setVolume(parseFloat(e.target.value));
   };
 
   const toggleMute = () => {
-    const newMuted = !muted;
-    setMuted(newMuted);
-    if (playerRef.current) {
-      playerRef.current.muted = newMuted;
-    }
+    setMuted(!muted);
   };
 
   return (
     <div className="w-full h-full bg-black relative netflix-player">
-      <video 
+      <ReactPlayer
         ref={playerRef}
-        src={streamUrl}
-        autoPlay={autostart}
-        controls={false}
-        onClick={handlePlayPause}
-        style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' }}
-        onLoadedMetadata={(e) => {
-          console.log('✅ Video metadata loaded, duration:', e.target.duration);
-          // Apply stored volume
-          e.target.volume = volume;
-          e.target.muted = muted;
-          
-          // resume playback if requested
-          if (file.startTime && file.startTime > 0) {
-              e.target.currentTime = file.startTime;
-          } else if (file.currentTime && file.currentTime > 0) {
-              // Handle case where we pass the raw history item
-              e.target.currentTime = file.currentTime;
-          }
-        }}
-        onCanPlay={() => console.log('✅ Video can play')}
-        onPlay={() => {
-          console.log('▶️ Video playing');
-          setPlaying(true);
-        }}
-        onPause={() => {
-          console.log('⏸️ Video paused');
-          setPlaying(false);
-        }}
-        onTimeUpdate={(e) => {
-          if (!seeking && e.target.duration) {
-            setPlayed(e.target.currentTime / e.target.duration);
-            if (onProgress) onProgress(e.target.currentTime, e.target.duration); // Expose progress
-          }
-        }}
+        url={streamUrl}
+        playing={playing}
+        volume={volume}
+        muted={muted}
+        width="100%"
+        height="100%"
+        onProgress={handleProgress}
         onEnded={() => {
-          console.log('🏁 Video ended');
           setPlaying(false);
           if (onEnded) onEnded();
         }}
-        onError={(e) => console.error('❌ Video error:', e)}
+        onError={(e) => console.error('Player error:', e)}
+        config={{
+          file: {
+            attributes: {
+              controlsList: 'nodownload',
+              crossOrigin: 'anonymous',
+            },
+          },
+        }}
       />
-      
       
       {/* Custom Controls Overlay */}
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 space-y-2">
@@ -216,9 +161,6 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
           {/* File Name */}
           <div className="flex-1 text-white text-sm font-medium truncate">
             {file.name}
-            <span className="text-xs text-gray-400 ml-2 block sm:inline sm:ml-2 opacity-50">
-               {streamUrl}
-            </span>
           </div>
 
           {/* Fullscreen could be added here */}
