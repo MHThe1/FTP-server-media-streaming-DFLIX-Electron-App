@@ -137,7 +137,6 @@ const HomePage = ({ onPlay, onBrowseFiles }) => {
           
           // If no exact match, try finding the Closest Parent Folder
           if (!libraryItem && item.path) {
-               console.log(`[Hydrate] Looking for parent of: ${item.path}`);
                // Find all library items that could be a parent of this file
                const candidates = library.filter(lib => {
                    // Ignore files, only look for folders/movies/shows
@@ -149,15 +148,10 @@ const HomePage = ({ onPlay, onBrowseFiles }) => {
                    return item.path.startsWith(dirPath);
                });
                
-               console.log(`[Hydrate] Found ${candidates.length} candidates:`, candidates.map(c => decodeURIComponent(c.path)));
-               
                // Sort by path length descending (longest path = closest parent)
                if (candidates.length > 0) {
                    candidates.sort((a, b) => b.path.length - a.path.length);
                    libraryItem = candidates[0];
-                   console.log(`[Hydrate] Selected parent: ${decodeURIComponent(libraryItem.path)}, has poster: ${!!libraryItem.posterPath}`);
-               } else {
-                   console.warn(`[Hydrate] No parent found for: ${item.path}`);
                }
           }
 
@@ -207,13 +201,6 @@ const HomePage = ({ onPlay, onBrowseFiles }) => {
       const continueWatching = hydrateItems(userLists.continueWatching);
       const favorites = hydrateItems(userLists.favorites);
       const watchLater = hydrateItems(userLists.watchLater);
-      
-      // DEBUG: Check if library contains movie folders
-      if (continueWatching.length > 0) {
-          console.log('[Library Debug] Total library items:', library.length);
-          console.log('[Library Debug] Sample library paths:', library.slice(0, 10).map(i => i.path));
-          console.log('[Library Debug] Movie directories in library:', library.filter(i => i.path.includes('/Movies/')).slice(0, 5).map(i => ({ path: i.path, type: i.type, mediaType: i.mediaType })));
-      }
 
       // Always allow continuing watching even if library empty? 
       if (!library.length && !continueWatching.length && !favorites.length) return [];
