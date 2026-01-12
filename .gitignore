@@ -124,3 +124,5 @@ release/
 # Documentation
 *.md
 !README.md
+
+dist-electron-build/

@@ -19,7 +19,7 @@ let win = null;
 
 async function createWindow() {
   win = new BrowserWindow({
-    title: 'PirateFlix',
+    title: 'BetterFlix',
     width: 1280,
     height: 800,
     webPreferences: {

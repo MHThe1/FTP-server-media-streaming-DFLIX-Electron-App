@@ -2,8 +2,8 @@
 // Uses localStorage to persist data
 
 const STORAGE_KEYS = {
-  FAVORITES: 'pirateflix_favorites',
-  WATCH_LATER: 'pirateflix_watch_later'
+  FAVORITES: 'betterflix_favorites',
+  WATCH_LATER: 'betterflix_watch_later'
 };
 
 // Helper to get items from localStorage

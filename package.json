@@ -1,13 +1,13 @@
 {
-  "name": "pirateflix-desktop",
-  "productName": "PirateFlix",
-  "author": "PirateFlix Team",
+  "name": "betterflix-desktop",
+  "productName": "BetterFlix",
+  "author": "BetterFlix Team",
   "description": "Stream movies and TV shows from your ISP server",
   "version": "1.0.0",
   "main": "dist-electron/main.js",
   "build": {
-    "appId": "com.pirateflix.desktop",
-    "productName": "PirateFlix",
+    "appId": "com.betterflix.desktop",
+    "productName": "BetterFlix",
     "win": {
       "target": [
         "nsis"

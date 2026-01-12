@@ -1,60 +1,63 @@
-# PirateFlix Desktop
+# BetterFlix Desktop
 
-A modern, standalone media streaming desktop application built with Electron and React.
-It allows you to browse and stream content from your ISP's media server directly, bypassing network restrictions.
+**BetterFlix** is a desktop application that lets you stream movies and TV shows comfortably from your ISP's media server. It overcomes common browser restrictions (like Mixed Content and CORS) to provide a smooth, native streaming experience.
 
-## Features
+## 🚀 Features
 
-- 🖥️ **Native Desktop App**: Runs on Windows (and other platforms supported by Electron).
-- 🚀 **Direct Streaming**: Bypasses CORS and Mixed Content issues to stream directly from internal/legacy HTTP servers.
-- ⏬ **Downloads**: Download movies and TV shows directly to your computer.
-- 🎬 **TMDB Integration**: Automatic metadata fetching (posters, cast, ratings).
-- 📝 **Subtitles**: Integrated subtitle search.
+- **Native Experience**: Runs as a standalone app on your desktop.
+- **Direct Streaming**: Bypasses network restrictions to play content instantly.
+- **Downloads**: One-click download for movies and episodes.
+- **Smart Library**: Automatically fetches posters, ratings, and cast info from TMDB.
+- **Subtitles**: Integrated search for subtitles.
 
-## Prerequisites
+## 📥 Download & Install
 
-- **Node.js** (v18 or higher)
-- A **TMDB API Key** (Get one at [themoviedb.org](https://www.themoviedb.org/settings/api))
+1.  Go to the **[Releases Page](https://github.com/MHThe1/FTP-server-media-streaming-DFLIX-Electron-App/releases)**.
+2.  Download the latest installer (`BetterFlix Setup x.x.x.exe`).
+3.  Run the installer.
+4.  Launch **BetterFlix** from your desktop or start menu.
 
-## Setup
+## 🛠Configuration
 
-1.  **Clone the repository:**
+On the first run, you might need to configure your server settings if they aren't pre-set.
+(If you are the administrator distributing this, you can pre-configure the `.env` settings before building).
+
+---
+
+## 👨‍💻 For Developers
+
+If you want to contribute or build the app yourself:
+
+### Prerequisites
+- Node.js v18+
+- TMDB API Key
+
+### Build from Source
+
+1.  **Clone the repo**
     ```bash
-    git clone https://github.com/yourusername/pirateflix-desktop.git
-    cd pirateflix-desktop
+    git clone https://github.com/MHThe1/FTP-server-media-streaming-DFLIX-Electron-App.git
+    cd FTP-server-media-streaming-DFLIX-Electron-App
     ```
 
-2.  **Install dependencies:**
+2.  **Install**
     ```bash
     npm install
     ```
 
-3.  **Configure Environment:**
-    Copy `.env.example` to `.env`:
-    ```bash
-    cp .env.example .env
-    ```
-    Edit `.env` and add your keys:
+3.  **Setup Environment**
+    Create a `.env` file:
     ```env
     VITE_HTTP_SERVER_URL=http://cdn.dflix.live
-    VITE_TMDB_API_KEY=your_actual_api_key
+    VITE_TMDB_API_KEY=your_key_here
     ```
 
-4.  **Run Development Mode:**
+4.  **Run**
     ```bash
     npm run electron:dev
     ```
 
-## Building for Production
-
-To create an executable installer (`.exe`):
-
-```bash
-npm run electron:build
-```
-
-The output file will be in the `dist-electron` or `dist` directory.
-
-## License
-
-MIT
+5.  **Build Installer**
+    ```bash
+    npm run electron:build
+    ```

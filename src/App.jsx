@@ -273,7 +273,7 @@ function App() {
             className="px-4 py-2 bg-black/70 hover:bg-black/90 text-white rounded-lg flex items-center gap-2 transition-all hover:scale-105 active:scale-95 backdrop-blur-sm font-semibold text-lg"
             aria-label="Go to home"
           >
-            PirateFlix
+            BetterFlix
           </button>
           
           {/* Back button */}
@@ -351,7 +351,7 @@ function App() {
               onClick={handleGoHome}
               className="m-0 text-lg sm:text-xl md:text-2xl text-white font-semibold truncate hover:text-[#00A8E1] transition-colors cursor-pointer"
             >
-              PirateFlix
+              BetterFlix
             </button>
           </div>
           {/* Settings Toggles */}
