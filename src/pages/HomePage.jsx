@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { useLibrary } from '../hooks/useLibrary';
+import { useUserLists } from '../hooks/useUserLists';
 import { metadataService } from '../services/metadata';
 import { metadataCache } from '../services/storage';
 import { userContent } from '../services/userContent';
@@ -8,15 +10,14 @@ import MediaModal from '../components/MediaModal';
 import { configService } from '../services/config';
 import AnnouncementBanner from '../components/AnnouncementBanner';
 
-const HomePage = ({ onPlay, onBrowseFiles }) => {
-  const [loading, setLoading] = useState(true);
-  const [library, setLibrary] = useState([]);
+const HomePage = ({ onPlay, onBrowseFiles, onOpenProfile }) => {
+  const { library, loading, isScanning, scanProgress, hydrateItems } = useLibrary();
+  const userLists = useUserLists(); // This hook returns the fresh object
+  
   const [heroItem, setHeroItem] = useState(null);
   const [heroIndex, setHeroIndex] = useState(() => Math.floor(Math.random() * 20));
   const [trendingPool, setTrendingPool] = useState([]);
   const [selectedItem, setSelectedItem] = useState(null);
-  const [scanProgress, setScanProgress] = useState({ current: 0, total: 0 });
-  const [isScanning, setIsScanning] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [serverMatches, setServerMatches] = useState([]);
@@ -24,7 +25,6 @@ const HomePage = ({ onPlay, onBrowseFiles }) => {
   const [announcement, setAnnouncement] = useState(null);
 
   useEffect(() => {
-    loadLibrary();
     loadRemoteConfig();
     
     // Shuffle timer
@@ -34,6 +34,32 @@ const HomePage = ({ onPlay, onBrowseFiles }) => {
     return () => clearInterval(interval);
   }, []);
 
+  // --- EFFECT: Search Server Index ---
+  useEffect(() => {
+      if (!searchQuery || searchQuery.trim().length < 2) {
+          setServerMatches([]);
+          return;
+      }
+
+      const timer = setTimeout(async () => {
+          console.log(`Searching server index for: ${searchQuery}`);
+          const matches = await metadataService.searchServerIndex(searchQuery);
+          
+          // Filter out Season/Specials from server matches too
+          const filtered = matches.filter(i => {
+             const name = (i.name || '').toLowerCase();
+             if (name.includes('season') || name.match(/^s\d+/) || name.includes('specials')) {
+                  return false;
+             }
+             return true;
+          });
+          
+          setServerMatches(filtered);
+      }, 500); // Debounce
+
+      return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   const loadRemoteConfig = async () => {
     const config = await configService.fetchConfig();
     if (config) {
@@ -42,74 +68,19 @@ const HomePage = ({ onPlay, onBrowseFiles }) => {
     }
   };
 
-  const loadLibrary = async () => {
-    try {
-      setLoading(true);
-      // Check cache first (using service to get hotfixes)
-      let cachedItems = await metadataService.getLibrary();
-      
-      // If we have a decent cache, show it immediately
-      if (cachedItems.length > 0) {
-          setLibrary(cachedItems);
-          pickHeroItem(cachedItems);
-          setLoading(false);
-          // Optional: run background update?
+  // Pick Hero Item when library loads
+  useEffect(() => {
+      if (library.length > 0 && !heroItem) {
+          const validHeroItems = library.filter(i => i.backdropPath);
+          let hero = null;
+          if (validHeroItems.length > 0) {
+              hero = validHeroItems[Math.floor(Math.random() * validHeroItems.length)];
+          } else if (library.length > 0) {
+              hero = library[0];
+          }
+          if (hero) setHeroItem(hero);
       }
-
-      // If cache is empty or very small, trigger scan
-      if (cachedItems.length < 50) { 
-         setIsScanning(true);
-         const newItems = [];
-         
-         await metadataService.buildLibraryIndex((current, total, newItem) => {
-             setScanProgress({ current, total });
-             
-             // Progressive Update: Add item to library state live
-             if (newItem) {
-                 newItems.push(newItem);
-                 
-                 // Batch updates to avoid too many re-renders (every 10 items)
-                 if (newItems.length % 10 === 0) {
-                     setLibrary(prev => {
-                         const combined = [...prev, ...newItems];
-                         // De-dup by path just in case
-                         return Array.from(new Map(combined.map(item => [item.path, item])).values());
-                     });
-                     
-                     // If we have enough items, stop showing the loading spinner!
-                     if (newItems.length >= 20) {
-                         setLoading(false);
-                         // Try to pick a hero item if we don't have one yet
-                         setHeroItem(currentHero => currentHero || pickHeroItem([...cachedItems, ...newItems]));
-                     }
-                 }
-             }
-         });
-         
-         setIsScanning(false);
-         // Final consistency set
-         const finalLibrary = await metadataService.getLibrary();
-         setLibrary(finalLibrary);
-      }
-      
-    } catch (err) {
-      console.error("Failed to load library:", err);
-      setLoading(false);
-    }
-  };
-
-  const pickHeroItem = (items) => {
-      // Logic moved to effect below, this helper is kept for initial/random fallback
-      const validHeroItems = items.filter(i => i.backdropPath);
-      let hero = null;
-      if (validHeroItems.length > 0) {
-          hero = validHeroItems[Math.floor(Math.random() * validHeroItems.length)];
-      } else if (items.length > 0) {
-          hero = items[0];
-      }
-      if (hero) setHeroItem(hero);
-      return hero;
-  };
+  }, [library]); // Only run when library changes
   
   // --- EFFECT: Handle Hero Shuffle ---
   useEffect(() => {
@@ -118,121 +89,6 @@ const HomePage = ({ onPlay, onBrowseFiles }) => {
           setHeroItem(trendingPool[index]);
       }
   }, [heroIndex, trendingPool]);
-
-
-
-
-
-  // --- EFFECT: Handle Search ---
-  useEffect(() => {
-     if (!searchQuery || searchQuery.length < 3) {
-        setServerMatches([]); // Clear server matches if query is too short or empty
-        return;
-     }
-     
-     const runSearch = async () => {
-         // 1. Local Search (already done in getRows, but let's centralize)
-         
-         // 2. Server Search
-         const serverResults = await metadataService.searchServerIndex(searchQuery);
-         setServerMatches(serverResults);
-     };
-     
-     const timeoutId = setTimeout(runSearch, 300); // Debounce
-     return () => clearTimeout(timeoutId);
-  }, [searchQuery]);
-
-  // --- User Lists ---
-  const [userLists, setUserLists] = useState({
-      continueWatching: userContent.getContinueWatching(),
-      favorites: userContent.getFavorites(),
-      watchLater: userContent.getWatchLater()
-  });
-
-  useEffect(() => {
-     const handleUpdate = () => {
-         setUserLists({
-            continueWatching: userContent.getContinueWatching(),
-            favorites: userContent.getFavorites(),
-            watchLater: userContent.getWatchLater()
-         });
-     };
-     window.addEventListener('user-content-updated', handleUpdate);
-     handleUpdate();
-     return () => window.removeEventListener('user-content-updated', handleUpdate);
-  }, []);
-
-  // Build library lookup map once (for O(1) access)
-  const libraryByPath = React.useMemo(() => {
-      const map = new Map();
-      library.forEach(lib => {
-          // Store by both encoded and decoded path for flexibility
-          map.set(lib.path, lib);
-          try {
-              map.set(decodeURIComponent(lib.path), lib);
-          } catch {}
-      });
-      return map;
-  }, [library]);
-
-  // Helper to hydrate user list items with full metadata from library
-  const hydrateItems = (items) => {
-      if (!items || !items.length) return [];
-      
-      const hydrated = items.map(item => {
-          // Fast O(1) lookup
-          let libraryItem = libraryByPath.get(item.path);
-          
-          // If no exact match, try to find parent folder (simpler approach)
-          if (!libraryItem && item.path) {
-              // Extract show folder from path (e.g., /TV Series/ShowName/Season 1/file.mkv -> /TV Series/ShowName)
-              const seasonMatch = item.path.match(/^(.*?\/[^/]+)\/season\s*\d+\//i);
-              if (seasonMatch) {
-                  libraryItem = libraryByPath.get(seasonMatch[1]) || libraryByPath.get(seasonMatch[1] + '/');
-              }
-          }
-
-          if (libraryItem) {
-              // CRITICAL: Use parent folder for DISPLAY, but keep file tracking for PLAYBACK
-              return { 
-                  // Start with library parent metadata (title, poster, etc.)
-                  ...libraryItem,
-                  
-                  // Override with file-specific tracking data
-                  filePath: item.path,        // Preserve actual file path for playback
-                  currentTime: item.currentTime,
-                  duration: item.duration,
-                  progress: item.progress,
-                  lastWatched: item.lastWatched,
-                  
-                  // Use parent's path for deduplication, but store file path for playback
-                  parentPath: libraryItem.path,
-                  path: libraryItem.path,  // Display card uses parent path (for onclick to work with modal)
-                  
-                  // Explicitly use parent metadata for display
-                  title: libraryItem.title || libraryItem.name,
-                  name: libraryItem.name || libraryItem.title,
-                  posterPath: libraryItem.posterPath,
-                  backdropPath: libraryItem.backdropPath,
-                  mediaType: libraryItem.mediaType,
-                  tmdbId: libraryItem.tmdbId,
-              };
-          }
-          return item;
-      });
-      
-      // Deduplicate by parent path (keep most recent)
-      const byParent = new Map();
-      hydrated.forEach(item => {
-          const key = item.parentPath || item.path;
-          const existing = byParent.get(key);
-          if (!existing || item.lastWatched > existing.lastWatched) {
-              byParent.set(key, item);
-          }
-      });
-      
-      return Array.from(byParent.values()).sort((a, b) => b.lastWatched - a.lastWatched);
-  };
 
   // --- EFFECT: Calculate Trending Pool ---
   useEffect(() => {
@@ -286,13 +142,22 @@ const HomePage = ({ onPlay, onBrowseFiles }) => {
       if (!library.length && !continueWatching.length && !favorites.length) return [];
       
       if (searchQuery) {
-          if (searchQuery.length < 3) return []; 
+          if (searchQuery.trim().length === 0) return []; 
           
           const lowerQuery = searchQuery.toLowerCase();
-          const localMatches = library.filter(i => 
-              (i.name && i.name.toLowerCase().includes(lowerQuery)) ||
-              (i.title && i.title.toLowerCase().includes(lowerQuery))
-          );
+          const localMatches = library.filter(i => {
+              // 1. Exclude Season/Specials directories
+              if (i.type === 'directory') {
+                  const name = (i.name || '').toLowerCase();
+                  if (name.includes('season') || name.match(/^s\d+/) || name.includes('specials')) {
+                      return false;
+                  }
+              }
+              
+              // 2. Match Query
+              return (i.name && i.name.toLowerCase().includes(lowerQuery)) ||
+                     (i.title && i.title.toLowerCase().includes(lowerQuery));
+          });
           
           const allMatches = [...localMatches, ...(serverMatches || [])];
           const uniqueMatches = Array.from(new Map(allMatches.map(item => [item.path, item])).values());
@@ -351,14 +216,21 @@ const HomePage = ({ onPlay, onBrowseFiles }) => {
     );
   }
 
+  const handleResetHome = () => {
+      setSearchQuery('');
+      setServerMatches([]);
+      setIsSearchOpen(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
     <div className="min-h-screen bg-[#141414] pb-20 overflow-x-hidden">
       {/* Navbar Overlay */}
       <nav className="fixed top-0 left-0 right-0 z-50 px-4 py-4 md:px-12 flex items-center justify-between bg-gradient-to-b from-black/80 to-transparent">
         <div className="flex items-center gap-8">
-            <h1 className="text-red-600 text-2xl md:text-3xl font-bold uppercase tracking-tighter cursor-pointer">BetterFlix</h1>
+            <h1 onClick={handleResetHome} className="text-red-600 text-2xl md:text-3xl font-bold uppercase tracking-tighter cursor-pointer">BetterFlix</h1>
             <ul className="hidden md:flex gap-6 text-sm text-gray-300 font-medium">
-                <li className="text-white cursor-pointer font-bold">Home</li>
+                <li onClick={handleResetHome} className="text-white cursor-pointer font-bold hover:text-red-500 transition-colors">Home</li>
                 <li className="hover:text-gray-300 cursor-pointer text-gray-400" onClick={onBrowseFiles}>Browse Files</li>
             </ul>
         </div>
@@ -386,23 +258,42 @@ const HomePage = ({ onPlay, onBrowseFiles }) => {
                 </button>
             </div>
             
-            <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs">U</div>
+            <button 
+                onClick={onOpenProfile}
+                className="w-9 h-9 rounded-sm bg-gradient-to-br from-red-600 to-red-800 flex items-center justify-center text-white shadow-lg hover:shadow-red-500/50 hover:scale-105 transition-all duration-300 border border-white/10 group"
+                aria-label="User Profile"
+            >
+                <svg className="w-5 h-5 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+            </button>
         </div>
       </nav>
       
       {/* Mobile Browse Button (Fixed bottom right or something, or just in header) */}
       
-      <HeroSection 
-        item={heroItem} 
-        onPlay={onPlay} 
-        onInfo={setSelectedItem} 
-      />
+      {/* Hero Section - Hide when searching */}
+      {!searchQuery && (
+          <HeroSection 
+            item={heroItem} 
+            onPlay={(item) => {
+                // For TV Shows/Directories, "Play" should open the Details/Episodes Modal (like MediaCard)
+                // instead of jumping to the File Browser.
+                if (item.mediaType === 'tv' || item.type === 'directory') {
+                    setSelectedItem(item);
+                } else {
+                    onPlay(item);
+                }
+            }}
+            onInfo={setSelectedItem} 
+          />
+      )}
       
       
-      <div className="relative z-10 -mt-20 md:-mt-32 space-y-4 md:space-y-8">
+      <div className={`relative z-10 ${searchQuery ? 'mt-20' : '-mt-20 md:-mt-32'} space-y-4 md:space-y-8`}>
         
-        {/* Announcement Banner */}
-        {announcement && (
+        {/* Announcement Banner - Hide when searching */}
+        {announcement && !searchQuery && (
             <div className="container mx-auto px-4 md:px-12 pt-4">
                 <AnnouncementBanner 
                     announcement={announcement} 

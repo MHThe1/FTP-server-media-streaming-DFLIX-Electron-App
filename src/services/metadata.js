@@ -297,7 +297,8 @@ export const metadataService = {
               
               // Try to find on TMDB
               try {
-                  const tmdbData = await api.searchMedia(item.n, type);
+                  const cleanName = cleanFileName(item.n);
+                  const tmdbData = await api.searchMedia(cleanName, type);
                   if (tmdbData.results && tmdbData.results.length > 0) {
                       // Find best match (exact title match preferred) or just take first
                       const best = tmdbData.results.find(r => r.title.toLowerCase() === item.n.toLowerCase()) || tmdbData.results[0];

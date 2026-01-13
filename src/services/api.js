@@ -260,39 +260,7 @@ export const api = {
     }
   },
 
-  async searchSubtitles(query, language = 'en') {
-    try {
-      // In Electron, we can hit OpenSubtitles directly
-      const searchUrl = `https://rest.opensubtitles.org/search/query-${encodeURIComponent(query)}/sublanguageid-${language}`;
-      const response = await fetch(searchUrl, {
-        headers: { 'Accept': 'application/json' }
-      });
-      
-      if (!response.ok) return [];
 
-      const data = await response.json();
-      let subtitles = [];
-      
-      if (Array.isArray(data)) subtitles = data;
-      else if (data?.data && Array.isArray(data.data)) subtitles = data.data;
-
-      return subtitles.map(sub => ({
-        id: sub.IDSubtitleFile || sub.id,
-        name: sub.SubFileName || sub.filename || sub.name,
-        language: sub.LanguageName || sub.language || language,
-        downloadUrl: sub.SubDownloadLink || sub.download_url || sub.url,
-        format: sub.SubFormat || sub.format || 'srt',
-        downloads: sub.SubDownloadsCnt || sub.downloads || 0
-      })).filter(sub => sub.downloadUrl);
-    } catch (error) {
-      console.error('Subtitle search error:', error);
-      return [];
-    }
-  },
-
-  getSubtitleDownloadUrl(subtitleUrl) {
-    return subtitleUrl; // Direct access in Electron
-  },
 
   async searchMedia(query, type = 'multi') {
     try {

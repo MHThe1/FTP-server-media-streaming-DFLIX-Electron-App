@@ -8,6 +8,13 @@ const AnnouncementBanner = ({ announcement }) => {
     const { text, link, color, imageUrl, videoUrl } = announcement;
     const isMedia = !!(imageUrl || videoUrl);
 
+    // Resolve image URL (handle local assets vs remote)
+    let finalImageUrl = imageUrl;
+    if (imageUrl && !imageUrl.startsWith('http') && !imageUrl.startsWith('blob:') && !imageUrl.startsWith('data:')) {
+        // Assume it's in public/ folder
+        finalImageUrl = imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`;
+    }
+
     // Common container style
     const containerStyle = {
         backgroundColor: color || '#dc2626',
@@ -41,7 +48,7 @@ const AnnouncementBanner = ({ announcement }) => {
                          </div>
                     ) : (
                         <img 
-                            src={imageUrl} 
+                            src={finalImageUrl} 
                             alt={text || "Announcement"} 
                             className="w-full h-full object-cover block"
                         />

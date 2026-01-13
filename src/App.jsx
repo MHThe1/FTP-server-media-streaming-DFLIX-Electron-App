@@ -52,6 +52,7 @@ const getParentPath = (path) => {
 };
 
 import HomePage from './pages/HomePage';
+import UserPage from './pages/UserPage';
 
 function App() {
   // Get initial path from URL or default to '/'
@@ -456,11 +457,21 @@ function App() {
   }
   
   // Choose view based on viewMode
+  if (viewMode === 'profile') {
+      return (
+          <UserPage 
+              onBack={() => setViewMode('home')}
+              onPlay={handleFileSelect}
+          />
+      );
+  }
+
   if (viewMode === 'home') {
       return (
           <HomePage 
               onPlay={handleFileSelect}
               onBrowseFiles={() => setViewMode('browse')}
+              onOpenProfile={() => setViewMode('profile')}
           />
       );
   }

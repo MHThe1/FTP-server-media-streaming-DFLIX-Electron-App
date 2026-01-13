@@ -41,6 +41,14 @@ const MediaModal = ({ item, onClose, onPlay }) => {
     }
   }, [item]);
 
+  // Scroll Lock
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
+
   if (!item) return null;
 
   // Helper to check if a folder is likely a season
@@ -69,7 +77,7 @@ const MediaModal = ({ item, onClose, onPlay }) => {
                }
           }
           
-          console.log(`Browsing episodes from: ${targetPath} (derived from ${item.path})`);
+          // console.log(`Browsing episodes from: ${targetPath} (derived from ${item.path})`);
           
           // Recursively explore to find all seasons and episodes
           const { foundSeasons, rootVideos } = await exploreDirectory(targetPath, 0, 3);
@@ -141,7 +149,7 @@ const MediaModal = ({ item, onClose, onPlay }) => {
       const loadSeason = async () => {
           setLoadingEpisodes(true);
           try {
-              console.log(`Loading season: ${selectedSeason.name}`);
+              // console.log(`Loading season: ${selectedSeason.name}`);
               const files = await api.listFiles(selectedSeason.path);
               processEpisodes(files);
           } catch (e) {
@@ -328,7 +336,7 @@ const MediaModal = ({ item, onClose, onPlay }) => {
         {/* Content Section (Scrollable) */}
         <div className="p-8 overflow-y-auto bg-[#181818]">
             {view === 'episodes' ? (
-                <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-300">
+                <div className="space-y-4">
                     <div className="flex items-center justify-between">
                          <h3 className="text-xl font-bold text-white">Episodes</h3>
                          
