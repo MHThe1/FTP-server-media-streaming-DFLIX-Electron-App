@@ -304,7 +304,7 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
           <div className="absolute inset-0 z-50 bg-black flex items-center justify-center">
               <video 
                   ref={introVideoRef}
-                  src="/intro.mp4" 
+                  src="intro.mp4" 
                   autoPlay 
                   onEnded={onIntroEnded}
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}

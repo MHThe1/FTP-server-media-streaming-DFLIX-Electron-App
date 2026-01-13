@@ -12,7 +12,8 @@ const AnnouncementBanner = ({ announcement }) => {
     let finalImageUrl = imageUrl;
     if (imageUrl && !imageUrl.startsWith('http') && !imageUrl.startsWith('blob:') && !imageUrl.startsWith('data:')) {
         // Assume it's in public/ folder
-        finalImageUrl = imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`;
+        // For Electron/File protocol, we want relative path (no leading slash)
+        finalImageUrl = imageUrl.startsWith('/') ? imageUrl.slice(1) : imageUrl;
     }
 
     // Common container style
