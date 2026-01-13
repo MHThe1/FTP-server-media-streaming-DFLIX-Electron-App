@@ -80,14 +80,38 @@ class UserContentService {
     saveProgress(item, currentTime, duration) {
         if (!duration || duration < 10) return; // Ignore very short/broken clips
 
-        let list = this.getContinueWatching();
+        let list = this._get(STORAGE_KEYS.CONTINUE_WATCHING); // Get raw list, not deduplicated
         
         // Progress percentage
         const pct = currentTime / duration;
+
+        // Detect TV series episodes (path contains /Season X/ or episode pattern S01E01)
+        const isTvEpisode = /\/season\s*\d+\//i.test(item.path) || /s\d{1,2}e\d{1,2}/i.test(item.path || item.name);
+        
+        // Extract show folder path (e.g., /TV Series/Breaking Bad/) from episode path
+        let showPathForStorage = null; // Original case, for storage
+        let showPathLower = null;      // Lowercase, for comparison
+        if (isTvEpisode) {
+            const seasonMatch = item.path.match(/^(.*?\/[^/]+)\/season\s*\d+\//i);
+            if (seasonMatch) {
+                showPathForStorage = seasonMatch[1] + '/'; // e.g., "/TV Series/Breaking Bad/"
+                showPathLower = seasonMatch[1].toLowerCase();
+            }
+        }
+
+        // The "key" path for this entry (series folder for TV, file path for movies)
+        const entryKeyPath = showPathForStorage || item.path;
         
         // If > 95% complete, remove from continue watching (mark as done)
         if (pct > 0.95) {
-            const idx = list.findIndex(i => i.path === item.path);
+            const idx = list.findIndex(i => {
+                if (showPathLower) {
+                    // For TV, match by series folder
+                    const m = i.path?.match(/^(.*?\/[^/]+)\/season\s*\d+\//i);
+                    return m && m[1].toLowerCase() === showPathLower;
+                }
+                return i.path === item.path || i.filePath === item.path;
+            });
             if (idx >= 0) {
                 list.splice(idx, 1);
                 this._set(STORAGE_KEYS.CONTINUE_WATCHING, list);
@@ -95,51 +119,48 @@ class UserContentService {
             return;
         }
 
-        // Detect TV series episodes (path contains /Season X/ or episode pattern S01E01)
-        const isTvEpisode = /\/season\s*\d+\//i.test(item.path) || /s\d{1,2}e\d{1,2}/i.test(item.path || item.name);
-        
-        // Extract show folder path (e.g., /TV Series/Severance/) from episode path
-        let showPath = null;
-        if (isTvEpisode) {
-            // Find the show's root folder by looking for "Season" in path
-            const seasonMatch = item.path.match(/^(.*?\/[^/]+)\/season\s*\d+\//i);
-            if (seasonMatch) {
-                showPath = seasonMatch[1].toLowerCase(); // e.g., "/tv series/severance"
+        // Find existing entry for this show (by series path) or this exact file
+        let existingIdx = list.findIndex(i => {
+            if (showPathLower) {
+                // For TV, match by series folder path (compare lowercase)
+                const m = i.path?.match(/^(.*?\/[^/]+)\/?$/i);
+                if (m && m[1].toLowerCase() === showPathLower) return true;
+                // Also check if it's an old-format entry with episode path
+                const mOld = i.path?.match(/^(.*?\/[^/]+)\/season\s*\d+\//i);
+                return mOld && mOld[1].toLowerCase() === showPathLower;
             }
-        }
-
-        // Find existing entry for this exact episode OR any episode from the same show
-        let existingIdx = list.findIndex(i => i.path === item.path);
-        let existingEntry = existingIdx >= 0 ? list[existingIdx] : {};
+            return i.path === item.path;
+        });
         
-        // If this is a TV episode, remove any OTHER episodes from the same show
-        if (showPath) {
-            list = list.filter((entry, idx) => {
-                if (idx === existingIdx) return true; // Keep the current entry (will be updated)
-                const entryShowMatch = entry.path?.match(/^(.*?\/[^/]+)\/season\s*\d+\//i);
-                if (entryShowMatch && entryShowMatch[1].toLowerCase() === showPath) {
-                    return false; // Remove this old episode from same show
-                }
-                return true;
-            });
-            // Recalculate existingIdx after filter
-            existingIdx = list.findIndex(i => i.path === item.path);
-            existingEntry = existingIdx >= 0 ? list[existingIdx] : {};
-        }
+        let existingEntry = existingIdx >= 0 ? list[existingIdx] : {};
 
-        // Smart Merge: Prefer new data, but keep old metadata (poster/backdrop) if missing
+        // Build the new entry, explicitly controlling each property
         const entry = {
-            ...existingEntry,
-            ...item,
+            // Preserve existing metadata if available
+            id: existingEntry.id || item.id,
+            title: existingEntry.title || item.title || item.name,
+            name: existingEntry.name || item.name,
+            overview: existingEntry.overview || item.overview,
             posterPath: item.posterPath || existingEntry.posterPath,
             backdropPath: item.backdropPath || existingEntry.backdropPath,
-            title: item.title || existingEntry.title || item.name,
+            rating: existingEntry.rating || item.rating,
+            releaseDate: existingEntry.releaseDate || item.releaseDate,
+            genres: existingEntry.genres || item.genres,
+            mediaType: isTvEpisode ? 'tv' : (existingEntry.mediaType || item.mediaType || 'movie'),
+            type: isTvEpisode ? 'directory' : (existingEntry.type || item.type),
+            
+            // THE KEY FIX: path is the SERIES folder for TV shows, not the episode file
+            path: entryKeyPath,
+            
+            // Progress data
             currentTime,
             duration,
             progress: pct,
             lastWatched: Date.now(),
-            // Store the episode file path for resume
-            filePath: item.path
+            
+            // Episode-specific data for resume
+            filePath: item.path,
+            episodeName: item.name
         };
 
         if (existingIdx >= 0) {

@@ -34,12 +34,31 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
     localStorage.setItem('mediaPlayerVolume', volume.toString());
   }, [volume]);
 
-  // Reset state when FILE changes (not when streamUrl changes for seeking)
+  // Intro State
+  const [showIntro, setShowIntro] = useState(false);
+  const introVideoRef = useRef(null);
+
+  // Initialize HLS when streamUrl changes (including for seeking)
+  useEffect(() => {
+    // Reset intro state when file changes (only if starting from beginning)
+    // We check this via file prop change in separate effect, but here we handle stream init
+  }, [streamUrl]);
+  
+  // Handle File Change & Intro Logic
   useEffect(() => {
     setPlayed(0);
     setSeekOffset(0);
     setDuration(0);
     setPlaying(autostart);
+
+    // Initial Intro Check
+    // If starting from 0 (or very close), play intro
+    const startTime = file?.startTime || file?.currentTime || 0;
+    if (startTime < 5) { // 5s tolerance
+        setShowIntro(true);
+    } else {
+        setShowIntro(false);
+    }
 
     // Fetch metadata for duration
     if (file && needsTranscoding) {
@@ -49,10 +68,28 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
             }
         });
     }
-  }, [file]); // ONLY reset on file change, NOT streamUrl
+  }, [file]);
 
-  // Initialize HLS when streamUrl changes (including for seeking)
+  const onIntroEnded = () => {
+      console.log('Intro ended, starting main content');
+      setShowIntro(false);
+      // Main video will autoPlay if autostart is true because of dependency chain
+      // We might need to force play though
+      if (playerRef.current && autostart) {
+          playerRef.current.play().catch(e => console.log('Autoplay catch', e));
+      }
+  };
+
+  const skipIntro = (e) => {
+      e.stopPropagation();
+      onIntroEnded();
+  };
+  
+  // HLS Effect (Modified to respect intro)
   useEffect(() => {
+    // We NO LONGER return if showIntro is true. We want to init HLS so it buffers/transcodes.
+    // if (showIntro) return; 
+
     const video = playerRef.current;
     if (!video || !streamUrl) return;
 
@@ -70,6 +107,7 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
                 debug: false,
                 enableWorker: true,
                 lowLatencyMode: true,
+                autoStartLoad: true, // Start loading immediately
             });
             hlsRef.current = hls;
 
@@ -78,7 +116,16 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
 
             hls.on(Hls.Events.MANIFEST_PARSED, () => {
                 setIsBuffering(false); // Hide loading
-                video.play().catch(e => console.error("Autoplay failed", e));
+                // ONLY play if intro is NOT showing.
+                // If intro is showing, we just let it buffer.
+                // We access the ref value directly or local variable, but creating a closure here is tricky with state.
+                // Instead, rely on ref check or variable.
+                // Since this effect depends on showIntro, looking at closure variable showIntro is safe.
+                if (!showIntro) {
+                    video.play().catch(e => console.error("Autoplay failed", e));
+                } else {
+                    console.log('HLS ready, waiting for intro to finish...');
+                }
             });
             
             hls.on(Hls.Events.ERROR, (event, data) => {
@@ -91,7 +138,7 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
                            hls.recoverMediaError();
                            break;
                        default:
-                           hls.destroy();
+                           // hls.destroy(); // Don't destroy immediately on recovery
                            break;
                    }
                 }
@@ -99,7 +146,9 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
         }
     } else {
         video.src = streamUrl;
-        if (autostart) video.play();
+        // Non-HLS (Direct file):
+        // If intro is showing, DO NOT play.
+        if (autostart && !showIntro) video.play();
     }
 
     return () => {
@@ -108,7 +157,7 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
             hlsRef.current = null;
         }
     };
-  }, [streamUrl, needsTranscoding]); // Trigger on streamUrl change (seek or new file)
+  }, [streamUrl, needsTranscoding, showIntro]); // Added showIntro dep
 
 
   // Handlers
@@ -251,10 +300,32 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
         </div>
       )}
       
+      {showIntro && (
+          <div className="absolute inset-0 z-50 bg-black flex items-center justify-center">
+              <video 
+                  ref={introVideoRef}
+                  src="/intro.mp4" 
+                  autoPlay 
+                  onEnded={onIntroEnded}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  onLoadedMetadata={(e) => {
+                      e.target.volume = volume;
+                      e.target.muted = muted;
+                  }}
+              />
+              <button 
+                  onClick={skipIntro}
+                  className="absolute bottom-10 right-10 bg-white/10 hover:bg-white/30 text-white border border-white/20 px-6 py-2 rounded uppercase font-bold text-sm tracking-widest transition-all z-50 backdrop-blur-sm"
+              >
+                  Skip Intro
+              </button>
+          </div>
+      )}
+      
       <video 
         ref={playerRef}
         src={streamUrl}
-        autoPlay={autostart || (needsTranscoding && seekOffset > 0)}
+        autoPlay={!showIntro && (autostart || (needsTranscoding && seekOffset > 0))} // BLOCK Autoplay if intro is showing
         controls={false}
         onClick={handlePlayPause}
         style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' }}
@@ -314,6 +385,7 @@ const MediaPlayer = ({ file, onEnded, autoplayNext, autostart = true, onProgress
             }
         }}
       />
+
       
       
       {/* Custom Controls Overlay */}

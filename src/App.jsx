@@ -88,7 +88,7 @@ function App() {
   });
   const [autostart, setAutostart] = useState(() => {
     const saved = localStorage.getItem('autostart');
-    return saved !== null ? saved === 'true' : false; // Default to false
+    return saved !== null ? saved === 'true' : true; // Default to true
   });
   
   // Save autoplay/autostart to localStorage when they change

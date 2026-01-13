@@ -167,7 +167,8 @@ const MediaModal = ({ item, onClose, onPlay }) => {
       const videoExts = ['mp4', 'webm', 'mkv', 'avi', 'mov'];
       let vids = files.filter(f => {
          if (f.type !== 'file') return false;
-         const ext = f.name.split('.').pop().toLowerCase();
+         // Use path for extension check since name may be truncated by Nginx (e.g., "...>")
+         const ext = (f.path || f.name).split('.').pop().toLowerCase();
          return videoExts.includes(ext);
       });
       

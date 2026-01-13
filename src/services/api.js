@@ -91,20 +91,22 @@ const parseDirectoryListing = (html, currentPath) => {
            // Ensure it starts with /
            if (!filePath.startsWith('/')) filePath = '/' + filePath;
 
-           if (files.length < 5) console.log(`  -> Resolved path: ${filePath}`);
            
       } catch (e) {
           console.error(`  -> Path resolution failed for ${cleanHref}:`, e);
           // Fallback to simple concat if URL fails
           const base = currentPath.endsWith('/') ? currentPath : currentPath + '/';
-          filePath = base + cleanHref; // Use cleanHref for consistency with original logic
+           // Try to decode href for cleaner path, but fallback to original
+          let decodedHref = cleanHref;
+          try { decodedHref = decodeURIComponent(cleanHref); } catch (e) {}
+          filePath = base + decodedHref;
       }
       
       // Prevent going above root
       if (!filePath.startsWith('/')) filePath = '/' + filePath;
 
       files.push({
-          name: name,
+          name: text.trim().replace(/\/$/, '') || name, // Prefer text content for name as it's cleaner
           type: isDirectory ? 'directory' : 'file',
           size: 0, // Nginx size parsing is messy, skipping for now
           modified: null,
@@ -114,21 +116,7 @@ const parseDirectoryListing = (html, currentPath) => {
 
   console.log(`Parsed ${files.length} items from ${currentPath}`);
 
-  console.log(`Parsed ${files.length} items from ${currentPath}`);
-
-  // Strong Deduplication by Name
-  // Use a Map to keep the LAST occurrence (or first? unique).
-  // We prefer the one that looks "cleaner"? Actually just unique names.
-  const uniqueFiles = new Map();
-  files.forEach(file => {
-      // If we already have this name, maybe check which path is better?
-      // For now, just First Wins or Last Wins.
-      if (!uniqueFiles.has(file.name)) {
-          uniqueFiles.set(file.name, file);
-      }
-  });
-
-  return Array.from(uniqueFiles.values());
+  return files;
 };
 
 export const api = {
