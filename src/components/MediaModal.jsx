@@ -31,8 +31,16 @@ const MediaModal = ({ item, onClose, onPlay }) => {
         
         // Check for progress
         // For Continue Watching items, we track the specific file path in filePath
+        // For TV series: stored path = series folder, stored filePath = episode file
         const lookupPath = item.filePath || item.path;
-        const matches = userContent.getContinueWatching().find(i => i.path === lookupPath);
+        const continueWatchingList = userContent.getContinueWatching();
+        
+        const matches = continueWatchingList.find(i => 
+            i.path === lookupPath || 
+            i.filePath === lookupPath ||
+            i.path === item.path  // Also match by series path for TV
+        );
+        
         if (matches && matches.currentTime) {
             setPlayProgress(matches.currentTime);
         } else {
@@ -216,19 +224,35 @@ const MediaModal = ({ item, onClose, onPlay }) => {
              <div className="absolute bottom-8 left-8 z-20">
                 <h2 className="text-3xl font-bold text-white mb-4">{item.title || item.name}</h2>
                 <div className="flex items-center gap-4">
-                    {/* Primary Action Button */}
-                    <button 
-                        onClick={() => {
-                            if (item.mediaType === 'tv' || (item.type === 'directory' && item.mediaType !== 'movie')) {
-                                handleBrowseEpisodes();
-                            } else {
-                                onPlay(item);
-                            }
-                        }}
-                        className="bg-white text-black px-8 py-2 rounded font-bold hover:bg-white/90 transition-colors flex items-center gap-2"
-                    >
-                        {(item.mediaType === 'tv' || (item.type === 'directory' && item.mediaType !== 'movie')) ? (
-                          <>
+                    {/* Action Buttons */}
+                    {(item.mediaType === 'tv' || (item.type === 'directory' && item.mediaType !== 'movie')) ? (
+                      /* TV Show - Resume (if progress) + Episodes buttons */
+                      <div className="flex items-center gap-3">
+                        {/* Resume Button for TV shows with progress */}
+                        {playProgress > 0 && (
+                          <button 
+                            onClick={() => {
+                                // Resume the specific episode from Continue Watching
+                                // IMPORTANT: Set type: 'file' so it plays instead of browsing
+                                const resumeItem = item.filePath 
+                                    ? { ...item, path: item.filePath, type: 'file', startTime: playProgress }
+                                    : { ...item, type: 'file', startTime: playProgress };
+                                onPlay(resumeItem);
+                            }}
+                            className="bg-white text-black px-6 py-2 rounded font-bold hover:bg-white/90 transition-colors flex items-center gap-2"
+                          >
+                              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                              Resume
+                              <span className="text-xs font-normal opacity-70 ml-1">
+                                  ({Math.floor(playProgress / 60)}m)
+                              </span>
+                          </button>
+                        )}
+                        {/* Browse Episodes button */}
+                        <button 
+                            onClick={handleBrowseEpisodes}
+                            className={`${playProgress > 0 ? 'bg-white/20 hover:bg-white/30 text-white' : 'bg-white text-black hover:bg-white/90'} px-6 py-2 rounded font-bold transition-colors flex items-center gap-2`}
+                        >
                             {view === 'episodes' ? (
                                 <>
                                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
@@ -237,11 +261,12 @@ const MediaModal = ({ item, onClose, onPlay }) => {
                             ) : (
                                 <>
                                     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
-                                    Browse Episodes
+                                    Episodes
                                 </>
                             )}
-                          </>
-                        ) : (
+                        </button>
+                      </div>
+                    ) : (
                           <div className="flex items-center gap-3">
                               {/* Resume Button (if progress exists) */}
                               {playProgress > 0 && (
@@ -249,8 +274,8 @@ const MediaModal = ({ item, onClose, onPlay }) => {
                                     onClick={() => {
                                         // For Continue Watching items, resume the specific file
                                         const resumeItem = item.filePath 
-                                            ? { ...item, path: item.filePath, startTime: playProgress }
-                                            : { ...item, startTime: playProgress };
+                                            ? { ...item, path: item.filePath, type: 'file', startTime: playProgress }
+                                            : { ...item, type: 'file', startTime: playProgress };
                                         onPlay(resumeItem);
                                     }}
                                     className="bg-white text-black px-6 py-2 rounded font-bold hover:bg-white/90 transition-colors flex items-center gap-2"
@@ -268,8 +293,8 @@ const MediaModal = ({ item, onClose, onPlay }) => {
                                 onClick={() => {
                                     // For Continue Watching, restart the specific file; otherwise play normally
                                     const playItem = item.filePath 
-                                        ? { ...item, path: item.filePath, startTime: 0 }
-                                        : { ...item, startTime: 0 };
+                                        ? { ...item, path: item.filePath, type: 'file', startTime: 0 }
+                                        : { ...item, type: 'file', startTime: 0 };
                                     onPlay(playItem);
                                 }}
                                 className={`${playProgress > 0 ? 'bg-white/20 hover:bg-white/30 text-white' : 'bg-white text-black hover:bg-white/90'} px-6 py-2 rounded font-bold transition-colors flex items-center gap-2`}
@@ -288,16 +313,7 @@ const MediaModal = ({ item, onClose, onPlay }) => {
                               </button>
                           </div>
                         )}
-                    </button>
                     
-                    {(item.mediaType === 'tv' || (item.type === 'directory' && item.mediaType !== 'movie')) && (
-                        <button 
-                            onClick={() => setView(view === 'details' ? 'episodes' : 'details')}
-                            className="bg-gray-600/60 text-white px-4 py-2 rounded font-semibold hover:bg-gray-600/80 transition-colors"
-                        >
-                            {view === 'details' ? 'Episodes' : 'Overview'}
-                        </button>
-                    )}
 
                     {/* Favorites Toggle */}
                     <button 

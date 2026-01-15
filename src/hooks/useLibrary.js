@@ -109,7 +109,8 @@ export const useLibrary = () => {
                     ...libraryItem,
                     
                     // Override with file-specific tracking data
-                    filePath: item.path,        // Preserve actual file path for playback
+                    // IMPORTANT: Use item.filePath if it exists (actual episode path), not item.path (series folder)
+                    filePath: item.filePath || item.path,
                     currentTime: item.currentTime,
                     duration: item.duration,
                     progress: item.progress,

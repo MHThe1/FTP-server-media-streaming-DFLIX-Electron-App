@@ -227,9 +227,16 @@ function App() {
   }, [selectedFile]);
 
   const handleFileSelect = async (file) => {
+    // DEBUG: Log file properties to see why movie resolution might fail
+    console.log('[handleFileSelect] File:', { path: file.path, type: file.type, mediaType: file.mediaType });
+    
     // 1. DIRECT PLAY for Movie Folders
     // If it's a Movie that happens to be a folder (e.g. from Server Search), find the video and play it.
-    if (file.mediaType === 'movie' && file.type === 'directory') {
+    // Check both type === 'directory' AND path ending with '/' (some items have incorrect type)
+    const isMovieFolder = file.mediaType === 'movie' && 
+        (file.type === 'directory' || file.path?.endsWith('/'));
+    
+    if (isMovieFolder) {
         try {
             console.log(`Resolving video file for movie folder: ${file.path}`);
             const files = await api.listFiles(file.path);
@@ -279,9 +286,17 @@ function App() {
         }
     }
 
-    // If it's a directory or a TV show (which we treat as a folder), browse it
-    if (file.type === 'directory' || file.mediaType === 'tv') {
-      const path = file.path;
+    // If it's explicitly a file, play it (this handles Resume correctly)
+    // Check type first BEFORE mediaType, because Resume sets type: 'file'
+    if (file.type === 'file') {
+      // Fall through to play
+    }
+    // If it's a TV series (directory), browse it
+    // IMPORTANT: Exclude movies here - movies with type='directory' should have been resolved above
+    // If movie resolution failed, they fall through to play (with folder path, which will likely fail but that's expected)
+    else if (file.mediaType === 'tv' || (file.type === 'directory' && file.mediaType !== 'movie')) {
+      // Prevent file paths from being set as currentPath
+      const path = isFilePath(file.path) ? getParentPath(file.path) : file.path;
       setCurrentPath(path);
       setSelectedFile(null); // Clear selection
       
@@ -306,7 +321,9 @@ function App() {
     // Otherwise, play it (Movies / Files)
     // Enrich with metadata if possible (to ensure posters/resume works effectively)
     const enriched = await metadataService.matchFile(file);
-    setSelectedFile(enriched);
+    // Preserve startTime from original file (for Resume functionality)
+    const fileToPlay = { ...enriched, startTime: file.startTime || enriched.startTime || 0 };
+    setSelectedFile(fileToPlay);
     
     // Update URL with file path
     const params = new URLSearchParams(window.location.search);
@@ -315,14 +332,16 @@ function App() {
   };
 
   const handlePathChange = (path) => {
-    setCurrentPath(path);
+    // Prevent file paths from being set as currentPath
+    const safePath = isFilePath(path) ? getParentPath(path) : path;
+    setCurrentPath(safePath);
     setSelectedFile(null); // Clear selection when navigating
     // Update URL with directory path
     const params = new URLSearchParams(window.location.search);
-    if (path === '/') {
+    if (safePath === '/') {
       params.delete('path');
     } else {
-      params.set('path', path);
+      params.set('path', safePath);
     }
     const newUrl = params.toString() 
       ? `${window.location.pathname}?${params.toString()}`
