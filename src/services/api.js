@@ -218,6 +218,29 @@ export const api = {
       return HTTP_SERVER_URL + filePath;
     }
   },
+
+  getSubtitleUrl(filePath, index) {
+      try {
+          if (!TRANSCODE_PORT) return null;
+          
+          const url = new URL(HTTP_SERVER_URL);
+          const basePath = url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
+          
+          // Decode first to prevent double-encoding (URL constructor auto-encodes)
+          let cleanPath = filePath.startsWith('/') ? filePath : '/' + filePath;
+          try {
+              cleanPath = decodeURIComponent(cleanPath);
+          } catch (e) { /* Already decoded, ignore */ }
+          
+          url.pathname = basePath + cleanPath;
+          const originalUrl = url.href;
+
+          return `http://localhost:${TRANSCODE_PORT}/subtitles?file=${encodeURIComponent(originalUrl)}&index=${index}`;
+      } catch (e) {
+          console.error('Error forming subtitle URL:', e);
+          return null;
+      }
+  },
   
   // For downloads inside the app
   getDirectStreamUrl(filePath) {

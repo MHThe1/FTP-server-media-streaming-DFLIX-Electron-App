@@ -107,6 +107,33 @@ app.get('/metadata', (req, res) => {
     });
 });
 
+// Route to stream specific subtitle track as WebVTT
+app.get('/subtitles', (req, res) => {
+    const fileUrl = req.query.file;
+    const index = req.query.index; // Stream index of the subtitle
+    
+    if (!fileUrl || index === undefined) return res.status(400).send('File and index required');
+
+    // Generate unique VTT
+    res.setHeader('Content-Type', 'text/vtt');
+    
+    // We use ffmpeg to extract and convert to VTT on the fly
+    const command = ffmpeg(fileUrl)
+        .noVideo()
+        .noAudio()
+        .outputOptions([
+            `-map 0:${index}`, // Select specific stream
+            '-f webvtt'        // Force VTT format
+        ])
+        .on('error', (err) => {
+            if (!err.message.includes('SIGKILL') && !err.message.includes('Output stream closed')) {
+                console.error(`[Transcoder] Subtitle duplicate error: ${err.message}`);
+            }
+        });
+        
+    command.pipe(res, { end: true });
+});
+
 // Routes are defined below in correct order:
 // 1. /stream - redirects to /hls/:sessionId/playlist.m3u8
 // 2. /hls/:sessionId/playlist.m3u8 - serves or starts transcoding
