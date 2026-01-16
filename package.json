@@ -3,7 +3,7 @@
   "productName": "BetterFlix",
   "author": "BetterFlix Team",
   "description": "Stream movies and TV shows from your ISP server",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "main": "dist-electron/main.js",
   "repository": {
     "type": "git",
