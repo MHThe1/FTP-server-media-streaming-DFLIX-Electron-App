@@ -27,6 +27,7 @@ async function createWindow() {
     height: 800,
     backgroundColor: '#141414', // Show dark background immediately
     show: false, // Don't show until ready
+    icon: join(__dirname, '../dist/appicon.ico'),
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       nodeIntegration: true,

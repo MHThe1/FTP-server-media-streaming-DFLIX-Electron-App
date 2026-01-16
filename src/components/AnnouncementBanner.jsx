@@ -28,7 +28,7 @@ const AnnouncementBanner = ({ announcement }) => {
                 // Media Mode: Fixed height box (banner style)
                 // User asked for "box and image fill it". 
                 // We'll use a fixed height for consistency (e.g. h-48 or h-64)
-                <div className="w-full relative h-48 md:h-64 overflow-hidden rounded-lg bg-black">
+                <div className="w-full relative h-26 md:h-36 overflow-hidden rounded-lg bg-black">
                     {videoUrl ? (
                          <div className="w-full h-full flex">
                              {/* Video on left/center - user said 'video can stay on left', potentially implying split? 
