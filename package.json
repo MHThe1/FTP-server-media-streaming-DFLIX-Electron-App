@@ -43,7 +43,7 @@
       "target": [
         "nsis"
       ],
-      "icon": "public/appicon.ico"
+      "icon": "public/betterflixicon.ico"
     },
     "nsis": {
       "oneClick": false,

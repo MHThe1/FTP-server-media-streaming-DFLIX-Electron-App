@@ -182,6 +182,11 @@ class UserContentService {
         }
         return false;
     }
+
+    clearAllData() {
+        Object.values(STORAGE_KEYS).forEach(key => localStorage.removeItem(key));
+        window.dispatchEvent(new Event('user-content-updated'));
+    }
 }
 
 export const userContent = new UserContentService();
