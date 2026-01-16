@@ -53,6 +53,7 @@ const getParentPath = (path) => {
 
 import HomePage from './pages/HomePage';
 import UserPage from './pages/UserPage';
+import UpdateNotification from './components/UpdateNotification.jsx';
 
 function App() {
   // Get initial path from URL or default to '/'
@@ -390,6 +391,7 @@ function App() {
 
     return (
       <div className="w-screen h-screen bg-black relative overflow-hidden">
+        <UpdateNotification />
         {/* Controls overlay */}
         <div className="absolute top-4 left-4 right-4 z-50 flex items-center justify-between gap-4">
           {/* Logo/Home button */}
@@ -478,26 +480,33 @@ function App() {
   // Choose view based on viewMode
   if (viewMode === 'profile') {
       return (
+        <>
+          <UpdateNotification />
           <UserPage 
               onBack={() => setViewMode('home')}
               onPlay={handleFileSelect}
           />
+        </>
       );
   }
 
   if (viewMode === 'home') {
       return (
+        <>
+          <UpdateNotification />
           <HomePage 
               onPlay={handleFileSelect}
               onBrowseFiles={() => setViewMode('browse')}
               onOpenProfile={() => setViewMode('profile')}
           />
+        </>
       );
   }
 
   // Otherwise, show full-screen browser (Legacy/Browse Mode)
   return (
     <div className="w-screen h-screen flex flex-col bg-[#0f1419] overflow-hidden">
+      <UpdateNotification />
       <header className="bg-[#1a2332] border-b border-white/5 px-4 sm:px-6 md:px-8 py-3 sm:py-4 flex-shrink-0 z-30">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-4 flex-1 min-w-0">
