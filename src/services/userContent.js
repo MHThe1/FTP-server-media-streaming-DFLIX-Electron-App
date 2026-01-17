@@ -183,9 +183,34 @@ class UserContentService {
         return false;
     }
 
-    clearAllData() {
+    async clearAllData() {
+        // 1. Clear Local Storage
         Object.values(STORAGE_KEYS).forEach(key => localStorage.removeItem(key));
+        localStorage.clear(); // Clear everything else too just in case
+
+        // 2. Clear Session Storage
+        sessionStorage.clear();
+
+        // 3. Clear Cookies
+        document.cookie.split(";").forEach((c) => {
+            document.cookie = c
+                .replace(/^ +/, "")
+                .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+        });
+
+        // 4. Notify UI (though reload will happen shortly)
         window.dispatchEvent(new Event('user-content-updated'));
+
+        // 5. Call Electron Main Process to clear backend cache/storage
+        try {
+            // Using require here because we have nodeIntegration: true
+            const { ipcRenderer } = require('electron');
+            await ipcRenderer.invoke('clear-app-data');
+        } catch (e) {
+            console.error('Failed to invoke clear-app-data IPC:', e);
+            // Fallback reload if IPC fails
+            window.location.reload();
+        }
     }
 }
 

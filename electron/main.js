@@ -161,6 +161,27 @@ app.whenReady().then(async () => {
       autoUpdater.quitAndInstall();
     });
 
+    ipcMain.handle('clear-app-data', async () => {
+      if (win) {
+        try {
+          // Clear all session data
+          await win.webContents.session.clearStorageData({
+            storages: ['appcache', 'cookies', 'filesystem', 'indexdb', 'localstorage', 'shadercache', 'websql', 'serviceworkers', 'cachestorage'],
+          });
+          await win.webContents.session.clearCache();
+          
+          console.log('App data cleared successfully');
+          
+          // Reload to apply changes and ensure fresh state
+          win.reload();
+          return true;
+        } catch (error) {
+          console.error('Failed to clear app data:', error);
+          return false;
+        }
+      }
+    });
+
     // Check for updates immediately
     autoUpdater.checkForUpdatesAndNotify();
   }

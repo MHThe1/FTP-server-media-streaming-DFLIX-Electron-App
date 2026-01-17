@@ -6,6 +6,7 @@ import WatchLaterSection from './components/WatchLaterSection.jsx';
 import { api } from './services/api';
 import { userContent } from './services/userContent';
 import { metadataService } from './services/metadata';
+import { analyticsService } from './services/analytics'; // Import Analytics
 
 // Helper to check if a path is likely a file (has extension)
 const isFilePath = (path) => {
@@ -131,6 +132,24 @@ function App() {
       window.history.replaceState({}, '', newUrl);
     }
   }, [currentPath, selectedFile, isInitialLoad, viewMode]);
+
+  // Analytics Initialization and Screen Views
+  useEffect(() => {
+    analyticsService.init();
+  }, []);
+
+  useEffect(() => {
+    if (selectedFile) {
+      analyticsService.screenView('Player');
+    } else if (viewMode === 'profile') {
+      analyticsService.screenView('Profile');
+    } else if (viewMode === 'home') {
+      analyticsService.screenView('Home');
+    } else {
+      analyticsService.screenView('Browser');
+    }
+  }, [viewMode, selectedFile, currentPath]); // Track when view or path changes
+
 
   // Restore file selection from URL on initial load
   useEffect(() => {
@@ -324,6 +343,14 @@ function App() {
     const enriched = await metadataService.matchFile(file);
     // Preserve startTime from original file (for Resume functionality)
     const fileToPlay = { ...enriched, startTime: file.startTime || enriched.startTime || 0 };
+    
+    // Track Playback Event
+    analyticsService.event('play_video', {
+      file_name: file.name,
+      file_path: file.path,
+      media_type: file.mediaType || 'unknown'
+    });
+
     setSelectedFile(fileToPlay);
     
     // Update URL with file path
