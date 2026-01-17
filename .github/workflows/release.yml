@@ -25,6 +25,10 @@ jobs:
         run: npm run electron:build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VITE_CONFIG_API_URL: ${{ vars.VITE_CONFIG_API_URL }}
+          VITE_TMDB_API_KEY: ${{ vars.VITE_TMDB_API_KEY }}
+          VITE_GA_MEASUREMENT_ID: ${{ vars.VITE_GA_MEASUREMENT_ID }}
+          VITE_GA_API_SECRET: ${{ secrets.VITE_GA_API_SECRET }}
 
       - name: Upload installer to release
         uses: softprops/action-gh-release@v1
